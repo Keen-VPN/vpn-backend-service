@@ -225,7 +225,21 @@ async function handleSubscriptionCreated(subscription) {
       }
       console.log(`👤 Found user: ${user.firebase_uid}`);
 
-      // Check if subscription update should be allowed
+      // For subscription.created, we only want to store the customer ID
+      // but NOT activate the subscription yet (payment hasn't been processed)
+      if (status === 'incomplete' || status === 'incomplete_expired') {
+        console.log(`⏳ Subscription created but payment pending - storing customer ID only`);
+
+        // Only update the customer ID, keep subscription status as inactive
+        await userSupabase.updateUser(user.id, {
+          stripe_customer_id: customerId
+        });
+
+        console.log('✅ Customer ID stored, waiting for payment confirmation');
+        return;
+      }
+
+      // If somehow we get an active status immediately, process it normally
       const newEndDate = new Date(subscription.current_period_end * 1000).toISOString();
       const shouldAllow = await userSupabase.shouldAllowSubscriptionUpdate(user.id, status, newEndDate);
 
@@ -259,7 +273,7 @@ async function handleSubscriptionUpdated(subscription) {
     const customerId = subscription.customer;
     const status = subscription.status;
 
-    console.log(`🔄 Processing subscription update for customer: ${customerId}`);
+    console.log(`🔄 Processing subscription update for customer: ${customerId}, status: ${status}`);
 
     const userSupabase = new UserSupabase();
     const user = await userSupabase.findByStripeCustomerId(customerId);
@@ -276,6 +290,11 @@ async function handleSubscriptionUpdated(subscription) {
     if (!shouldAllow) {
       console.log(`⏭️ Skipping subscription update for user ${user.firebase_uid} - update not allowed`);
       return;
+    }
+
+    // Special handling for when subscription becomes active (payment succeeded)
+    if (status === 'active') {
+      console.log(`🎉 Payment confirmed! Activating subscription for user ${user.firebase_uid}`);
     }
 
     await userSupabase.updateSubscriptionStatus(user.id, {
@@ -329,8 +348,26 @@ async function handleSubscriptionDeleted(subscription) {
 }
 
 async function handlePaymentSucceeded(invoice) {
-  console.log('Payment succeeded for invoice:', invoice.id);
-  // Handle successful payment if needed
+  try {
+    console.log(`💰 Payment succeeded for invoice: ${invoice.id}`);
+
+    // If this is a subscription invoice, the subscription should be updated
+    if (invoice.subscription) {
+      console.log(`📋 This payment is for subscription: ${invoice.subscription}`);
+
+      // Fetch the updated subscription to get the latest status
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      console.log(`📊 Subscription status after payment: ${subscription.status}`);
+
+      // The subscription.updated webhook should handle the status change
+      // but we can log it here for debugging
+      if (subscription.status === 'active') {
+        console.log(`✅ Subscription is now active after successful payment`);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error processing payment succeeded:', error);
+  }
 }
 
 async function handlePaymentFailed(invoice) {
