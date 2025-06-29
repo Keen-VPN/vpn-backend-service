@@ -1,187 +1,154 @@
 # KeenVPN Backend API
 
-A Node.js backend API for KeenVPN, built with Express.js and designed for deployment on Netlify Functions.
+A Node.js backend API for KeenVPN built with Express.js, Supabase (PostgreSQL), Firebase Authentication, and Stripe for subscription management. Deployed on Netlify Functions.
 
-## Features
+## 🚀 Features
 
-- 🔐 **Authentication**: JWT-based user authentication with Firebase integration
-- 💳 **Subscription Management**: Stripe integration for payment processing
-- 🗄️ **Database**: MongoDB with Mongoose ODM
-- 🛡️ **Security**: Helmet.js, CORS, rate limiting, input validation
-- ☁️ **Serverless**: Optimized for Netlify Functions deployment
-- 📊 **Health Monitoring**: Built-in health check endpoints
+- **Authentication**: Firebase Authentication integration
+- **Database**: Supabase (PostgreSQL) for user management and subscriptions
+- **Payments**: Stripe integration for subscription management
+- **Serverless**: Deployed on Netlify Functions
+- **Security**: Rate limiting, CORS, and input validation
 
-## Tech Stack
+## 🛠️ Tech Stack
 
-- **Runtime**: Node.js 18+
+- **Runtime**: Node.js
 - **Framework**: Express.js
-- **Database**: MongoDB with Mongoose
-- **Authentication**: Firebase Admin SDK + JWT
-- **Payments**: Stripe API
+- **Database**: Supabase (PostgreSQL)
+- **Authentication**: Firebase Admin SDK
+- **Payments**: Stripe
 - **Deployment**: Netlify Functions
-- **Security**: Helmet.js, CORS, Rate Limiting
+- **Security**: Helmet, CORS, Rate Limiting
 
-## Project Structure
+## 📋 Prerequisites
 
+- Node.js (v18 or higher)
+- Supabase account and project
+- Firebase project
+- Stripe account
+- Netlify account
+
+## 🔧 Environment Variables
+
+Create a `.env` file with the following variables:
+
+```bash
+# Firebase Configuration
+FIREBASE_PROJECT_ID=your-firebase-project-id
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYour Firebase Private Key\n-----END PRIVATE KEY-----\n"
+FIREBASE_CLIENT_EMAIL=your-firebase-client-email@your-project.iam.gserviceaccount.com
+
+# Stripe Configuration
+STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key
+STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret
+STRIPE_PRICE_ID=price_your_stripe_price_id
+
+# Supabase Configuration
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+# Server Configuration
+NODE_ENV=development
+PORT=3000
 ```
-backend/
-├── config/
-│   ├── database.js      # MongoDB connection configuration
-│   ├── firebase.js      # Firebase Admin SDK setup
-│   └── stripe.js        # Stripe configuration
-├── functions/
-│   └── api.js           # Main Netlify function
-├── models/
-│   └── User.js          # User model schema
-├── routes/
-│   ├── auth.js          # Authentication routes
-│   └── subscription.js  # Subscription management routes
-├── public/
-│   └── index.html       # Landing page
-├── netlify.toml         # Netlify configuration
-├── server.js            # Local development server
-└── package.json         # Dependencies and scripts
-```
 
-## Quick Start
+## 🗄️ Database Setup
 
-### Local Development
+1. **Create Supabase Project**: Go to [Supabase Dashboard](https://supabase.com/dashboard)
+2. **Run SQL Schema**: Execute the schema from `supabase-schema.sql` in your Supabase SQL Editor
+3. **Get Credentials**: Copy your project URL and API keys from Settings → API
 
-1. **Install dependencies**:
+## 🚀 Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd backend
+   ```
+
+2. **Install dependencies**:
    ```bash
    npm install
    ```
 
-2. **Set up environment variables**:
+3. **Set up environment variables**:
    ```bash
    cp env.example .env
-   # Edit .env with your configuration
+   # Edit .env with your actual values
    ```
 
-3. **Start development server**:
+4. **Run the development server**:
    ```bash
    npm run dev
    ```
 
-4. **Test the API**:
-   ```bash
-   curl http://localhost:3001/health
-   ```
+## 📡 API Endpoints
 
-### Netlify Deployment
-
-1. **Follow the deployment guide**: See [NETLIFY_DEPLOYMENT.md](./NETLIFY_DEPLOYMENT.md)
-
-2. **Test locally with Netlify CLI**:
-   ```bash
-   npm install -g netlify-cli
-   netlify dev
-   ```
-
-3. **Test the function**:
-   ```bash
-   node test-netlify-function.js
-   ```
-
-## API Endpoints
+### Health Check
+- `GET /health` - Check API and database health
 
 ### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - User login
-- `POST /api/auth/verify` - Verify JWT token
-- `POST /api/auth/refresh` - Refresh JWT token
+- `GET /api/auth/profile` - Get user profile
+- `PUT /api/auth/profile` - Update user profile
+- `GET /api/auth/can-access-vpn` - Check VPN access
+- `POST /api/auth/init` - Initialize user
 
 ### Subscriptions
-- `POST /api/subscription/create-checkout-session` - Create Stripe checkout
-- `POST /api/subscription/webhook` - Stripe webhook handler
+- `GET /api/subscription/plans` - Get available plans
 - `GET /api/subscription/status` - Get subscription status
-- `POST /api/subscription/cancel` - Cancel subscription
+- `POST /api/subscription/customer-portal` - Create customer portal session
+- `POST /api/subscription/create-checkout-session` - Create Stripe checkout
 
-### Utility
-- `GET /health` - Health check
-- `GET /success` - Payment success page
-- `GET /cancel` - Payment cancel page
+### Webhooks
+- `POST /api/subscription/webhook` - Stripe webhook handler
 
-## Environment Variables
+## 🧪 Testing
 
-Required environment variables (see `env.example` for details):
-
-- **MongoDB**: `MONGODB_URI`, `MONGODB_URI_PROD`
-- **Stripe**: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`
-- **Firebase**: `FIREBASE_PROJECT_ID`, `FIREBASE_PRIVATE_KEY`, etc.
-- **JWT**: `JWT_SECRET`
-- **App**: `NODE_ENV`, `PORT`
-
-## Development
-
-### Running Tests
+Test the Supabase connection:
 ```bash
-npm test
+node test-supabase.js
 ```
 
-### Code Quality
+Test API endpoints:
 ```bash
-npm run lint
+# Health check
+curl http://localhost:3001/health
+
+# Get plans
+curl http://localhost:3001/api/subscription/plans
 ```
 
-### Database Operations
-```bash
-# Connect to MongoDB shell
-mongosh "your-mongodb-uri"
-
-# View collections
-show collections
-
-# Query users
-db.users.find()
-```
-
-## Deployment
+## 🚀 Deployment
 
 ### Netlify Functions
-- **Build Command**: `npm install`
-- **Publish Directory**: `public`
-- **Functions Directory**: `functions`
 
-### Environment Setup
-1. Set all environment variables in Netlify dashboard
-2. Configure CORS origins for your frontend domains
-3. Set up Stripe webhook endpoints
-4. Configure Firebase service account
+1. **Connect to Netlify**: Link your repository to Netlify
+2. **Set Environment Variables**: Add all environment variables in Netlify dashboard
+3. **Deploy**: Push to main branch to trigger deployment
 
-## Monitoring
+### Environment Variables for Production
 
-### Health Checks
-- **Endpoint**: `GET /health`
-- **Response**: JSON with status, timestamp, and environment info
+Make sure to set these in your Netlify dashboard:
+- All Firebase credentials
+- All Stripe credentials  
+- All Supabase credentials
+- `NODE_ENV=production`
 
-### Logs
-- **Netlify**: Function logs available in Netlify dashboard
-- **Local**: Console output during development
+## 📊 Monitoring
 
-## Security
+- **Health Checks**: Monitor `/health` endpoint
+- **Supabase Dashboard**: Monitor database performance
+- **Netlify Analytics**: Monitor function performance
 
-- **CORS**: Configured for specific origins
+## 🔒 Security
+
 - **Rate Limiting**: 100 requests per 15 minutes per IP
-- **Input Validation**: All endpoints validated
-- **HTTPS**: Enforced in production
-- **Helmet.js**: Security headers
+- **CORS**: Configured for specific origins
+- **Input Validation**: Express-validator for request validation
+- **Authentication**: Firebase token verification on protected routes
 
-## Troubleshooting
-
-### Common Issues
-
-1. **Database Connection**: Check MongoDB URI and network access
-2. **CORS Errors**: Verify frontend domain in CORS configuration
-3. **Function Timeout**: Optimize database queries and external API calls
-4. **Environment Variables**: Ensure all variables are set in Netlify
-
-### Debug Mode
-```bash
-NODE_ENV=development npm run dev
-```
-
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -189,11 +156,6 @@ NODE_ENV=development npm run dev
 4. Test thoroughly
 5. Submit a pull request
 
-## License
+## 📄 License
 
-MIT License - see LICENSE file for details
-
-## Support
-
-For deployment issues, see [NETLIFY_DEPLOYMENT.md](./NETLIFY_DEPLOYMENT.md)
-For general support, create an issue in the repository 
+This project is licensed under the MIT License. 
