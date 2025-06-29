@@ -23,11 +23,28 @@ app.set('trust proxy', 1);
 app.use(helmet());
 
 // CORS configuration for Netlify
+// CORS configuration
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production'
-        ? ['https://yourdomain.com', 'https://your-app.netlify.app']
-        : ['http://localhost:5173', 'http://localhost:3000', 'https://keenvpn.loca.lt'],
-    credentials: true
+  origin: process.env.NODE_ENV === 'production'
+    ? [
+      'https://vpnkeen.netlify.app',
+      'https://vpnkeen.com',
+      // Allow Electron app requests (file:// protocol)
+      /^file:\/\//,
+      // Allow localhost for Electron development
+      /^http:\/\/localhost:\d+$/
+    ]
+    : [
+      // Allow Electron app requests (file:// protocol)
+      /^file:\/\//,
+      // Allow localhost for Electron development
+      /^http:\/\/localhost:\d+$/,
+      // Allow all origins in development for easier testing
+      true
+    ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
 // Rate limiting with custom key generator
