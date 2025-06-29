@@ -322,28 +322,23 @@ const CONNECTION_CACHE_DURATION = 30000; // 30 seconds
 
 app.use(async (req, res, next) => {
     try {
-      const now = Date.now();
+      // For webhook requests, skip database connection check
+      // Let the User model handle its own connections
+      if (req.path === '/api/subscription/webhook') {
+        return next();
+      }
 
-      // Check if we need to connect
+      // For other requests, ensure database is connected
         if (!database.isConnected()) {
           console.log('🔄 Database not connected, connecting...');
 
           // Use cached connection if it's recent
+          const now = Date.now();
           if (dbConnectionPromise && (now - lastConnectionTime) < CONNECTION_CACHE_DURATION) {
             console.log('⏳ Using cached connection promise...');
             await dbConnectionPromise;
           } else {
             // Create new connection
-            dbConnectionPromise = database.connect();
-            lastConnectionTime = now;
-            await dbConnectionPromise;
-          }
-        } else {
-          // Verify connection is still healthy
-          const health = await database.healthCheck();
-          if (health.status !== 'healthy') {
-            console.log('⚠️ Database unhealthy, reconnecting...');
-            await database.close();
             dbConnectionPromise = database.connect();
             lastConnectionTime = now;
             await dbConnectionPromise;
@@ -355,12 +350,6 @@ app.use(async (req, res, next) => {
 
       // Clear cached connection on error
       dbConnectionPromise = null;
-
-      // For webhook requests, don't fail the request
-      if (req.path === '/api/subscription/webhook') {
-        console.log('⚠️ Database error in webhook, continuing without DB...');
-        return next();
-      }
 
         res.status(500).json({
             success: false,

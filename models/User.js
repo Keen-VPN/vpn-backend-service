@@ -1,5 +1,14 @@
 import mongoose from 'mongoose';
 import { getAuth } from 'firebase-admin/auth';
+import database from '../config/database.js';
+
+// Helper function to ensure database connection
+async function ensureConnection() {
+  if (!database.isConnected()) {
+    console.log('🔄 Database not connected, connecting...');
+    await database.connect();
+  }
+}
 
 const userSchema = new mongoose.Schema({
   firebaseUid: {
@@ -64,6 +73,7 @@ userSchema.pre('save', function(next) {
 // Static methods
 userSchema.statics.createOrUpdateUser = async function(firebaseUser) {
   try {
+    await ensureConnection();
     const userData = {
       firebaseUid: firebaseUser.uid,
       email: firebaseUser.email,
@@ -92,6 +102,7 @@ userSchema.statics.createOrUpdateUser = async function(firebaseUser) {
 
 userSchema.statics.getUserByFirebaseUid = async function(firebaseUid) {
   try {
+    await ensureConnection();
     return await this.findOne({ firebaseUid });
   } catch (error) {
     console.error('Error getting user by Firebase UID:', error);
@@ -101,6 +112,7 @@ userSchema.statics.getUserByFirebaseUid = async function(firebaseUid) {
 
 userSchema.statics.getUserByEmail = async function(email) {
   try {
+    await ensureConnection();
     return await this.findOne({ email });
   } catch (error) {
     console.error('Error getting user by email:', error);
@@ -110,6 +122,7 @@ userSchema.statics.getUserByEmail = async function(email) {
 
 userSchema.statics.getUserByStripeCustomerId = async function(customerId) {
   try {
+    await ensureConnection();
     return await this.findOne({ stripeCustomerId: customerId });
   } catch (error) {
     console.error('Error getting user by Stripe customer ID:', error);
@@ -119,6 +132,7 @@ userSchema.statics.getUserByStripeCustomerId = async function(customerId) {
 
 userSchema.statics.updateSubscriptionStatus = async function(firebaseUid, subscriptionData) {
   try {
+    await ensureConnection();
     const updateData = {
       subscription: {
         status: subscriptionData.status,
@@ -157,6 +171,7 @@ userSchema.statics.updateSubscriptionStatus = async function(firebaseUid, subscr
 
 userSchema.statics.hasActiveSubscription = async function(firebaseUid) {
   try {
+    await ensureConnection();
     const user = await this.findOne({ firebaseUid });
     if (!user) return false;
 
@@ -175,6 +190,7 @@ userSchema.statics.hasActiveSubscription = async function(firebaseUid) {
 
 userSchema.statics.shouldAllowSubscriptionUpdate = async function(firebaseUid, newStatus) {
   try {
+    await ensureConnection();
     const user = await this.findOne({ firebaseUid });
     if (!user) return true; // Allow update if user doesn't exist
 
@@ -195,6 +211,7 @@ userSchema.statics.shouldAllowSubscriptionUpdate = async function(firebaseUid, n
 
 userSchema.statics.getSubscriptionDetails = async function(firebaseUid) {
   try {
+    await ensureConnection();
     const user = await this.findOne({ firebaseUid });
     if (!user) {
       return {
@@ -206,7 +223,7 @@ userSchema.statics.getSubscriptionDetails = async function(firebaseUid) {
       };
     }
 
-    // Use new structure if available
+    // Return new subscription structure if available
     if (user.subscription) {
       return {
         status: user.subscription.status,
