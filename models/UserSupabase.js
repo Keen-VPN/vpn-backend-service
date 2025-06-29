@@ -16,6 +16,7 @@ class UserSupabase {
                     firebase_uid: userData.firebase_uid,
                     email: userData.email,
                     display_name: userData.display_name,
+                    subscription_status: 'inactive',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString()
                 }])
@@ -258,6 +259,16 @@ class UserSupabase {
 
             // If status is changing from inactive to active, always allow
             if (currentUser.subscription_status === 'inactive' && newStatus === 'active') {
+                return true;
+            }
+
+            // NEW: If user has a customer ID but no subscription status (or null/inactive), 
+            // and we're trying to set it to active, allow it
+            // This handles the case where subscription.created stored customer ID but not status
+            if (currentUser.stripe_customer_id &&
+                (!currentUser.subscription_status || currentUser.subscription_status === 'inactive') &&
+                newStatus === 'active') {
+                console.log(`✅ Allowing subscription activation for user with customer ID but no active subscription`);
                 return true;
             }
 
