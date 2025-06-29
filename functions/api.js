@@ -8,7 +8,6 @@ import { getInstance as getSupabaseInstance } from '../config/supabase.js';
 import authRoutes from '../routes/auth.js';
 import subscriptionRoutes from '../routes/subscription.js';
 import stripe from '../config/stripe.js';
-import User from '../models/User.js';
 import UserSupabase from '../models/UserSupabase.js';
 import admin from 'firebase-admin';
 
@@ -226,13 +225,22 @@ async function handleSubscriptionCreated(subscription) {
       }
       console.log(`👤 Found user: ${user.firebase_uid}`);
 
+      // Check if subscription update should be allowed
+      const newEndDate = new Date(subscription.current_period_end * 1000).toISOString();
+      const shouldAllow = await userSupabase.shouldAllowSubscriptionUpdate(user.id, status, newEndDate);
+
+      if (!shouldAllow) {
+        console.log(`⏭️ Skipping subscription creation for user ${user.firebase_uid} - update not allowed`);
+        return;
+      }
+
       // Update user subscription status
       console.log('💾 Updating user subscription status...');
       await userSupabase.updateSubscriptionStatus(user.id, {
         customerId: customerId,
         status: status,
         plan: 'premium', // Single plan
-        endDate: new Date(subscription.current_period_end * 1000).toISOString()
+        endDate: newEndDate
       });
 
       console.log('✅ Subscription creation processed successfully');
@@ -261,11 +269,20 @@ async function handleSubscriptionUpdated(subscription) {
       return;
     }
 
+    // Check if subscription update should be allowed
+    const newEndDate = new Date(subscription.current_period_end * 1000).toISOString();
+    const shouldAllow = await userSupabase.shouldAllowSubscriptionUpdate(user.id, status, newEndDate);
+
+    if (!shouldAllow) {
+      console.log(`⏭️ Skipping subscription update for user ${user.firebase_uid} - update not allowed`);
+      return;
+    }
+
     await userSupabase.updateSubscriptionStatus(user.id, {
       customerId: customerId,
       status: status,
       plan: 'premium',
-      endDate: new Date(subscription.current_period_end * 1000).toISOString()
+      endDate: newEndDate
     });
 
     console.log('✅ Subscription update processed successfully');
@@ -286,6 +303,14 @@ async function handleSubscriptionDeleted(subscription) {
 
     if (!user) {
       console.error('❌ User not found for customer ID:', customerId);
+      return;
+    }
+
+    // Check if subscription update should be allowed
+    const shouldAllow = await userSupabase.shouldAllowSubscriptionUpdate(user.id, 'cancelled', null);
+
+    if (!shouldAllow) {
+      console.log(`⏭️ Skipping subscription deletion for user ${user.firebase_uid} - update not allowed`);
       return;
     }
 

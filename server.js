@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import { getInstance as getSupabaseInstance } from './config/supabase.js';
 import authRoutes from './routes/auth.js';
 import subscriptionRoutes from './routes/subscription.js';
+import stripe from './config/stripe.js';
+import UserSupabase from './models/UserSupabase.js';
 
 dotenv.config();
 
@@ -57,6 +59,206 @@ const supabase = getSupabaseInstance();
 
 // Webhook route needs raw body - must come BEFORE JSON parsing
 app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
+
+// Webhook handler for Stripe events (local development)
+app.post('/api/subscription/webhook', async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  try {
+    // Set a timeout for the entire webhook processing
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Webhook processing timeout')), 8000);
+    });
+
+    const webhookPromise = (async () => {
+      switch (event.type) {
+        case 'checkout.session.completed':
+          await handleCheckoutSessionCompleted(event.data.object);
+          break;
+
+        case 'customer.subscription.created':
+          await handleSubscriptionCreated(event.data.object);
+          break;
+
+        case 'customer.subscription.updated':
+          await handleSubscriptionUpdated(event.data.object);
+          break;
+
+        case 'customer.subscription.deleted':
+          await handleSubscriptionDeleted(event.data.object);
+          break;
+
+        case 'invoice.payment_succeeded':
+          await handlePaymentSucceeded(event.data.object);
+          break;
+
+        case 'invoice.payment_failed':
+          await handlePaymentFailed(event.data.object);
+          break;
+
+        default:
+          console.log(`Unhandled event type: ${event.type}`);
+      }
+    })();
+
+    // Race between webhook processing and timeout
+    await Promise.race([webhookPromise, timeoutPromise]);
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Error handling webhook:', error);
+
+    // If it's a timeout error, still return 200 to prevent Stripe retries
+    if (error.message === 'Webhook processing timeout') {
+      console.error('Webhook timed out, but returning 200 to prevent retries');
+      return res.status(200).json({ received: true, warning: 'Processing timeout' });
+    }
+
+    res.status(500).json({ error: 'Webhook handler failed' });
+  }
+});
+
+// Webhook handlers (same as in functions/api.js)
+async function handleCheckoutSessionCompleted(session) {
+  console.log('Checkout session completed:', session.id);
+}
+
+async function handleSubscriptionCreated(subscription) {
+  try {
+    const customerId = subscription.customer;
+    const status = subscription.status;
+
+    console.log(`🔄 Processing subscription creation for customer: ${customerId}`);
+
+    // Get customer details from Stripe
+    const customer = await stripe.customers.retrieve(customerId);
+    const userEmail = customer.email;
+    console.log(`📧 Found customer email: ${userEmail}`);
+
+    // Find user by email using Supabase
+    const userSupabase = new UserSupabase();
+    const user = await userSupabase.findByEmail(userEmail);
+    if (!user) {
+      console.error('❌ User not found for email:', userEmail);
+      return;
+    }
+    console.log(`👤 Found user: ${user.firebase_uid}`);
+
+    // Check if subscription update should be allowed
+    const newEndDate = new Date(subscription.current_period_end * 1000).toISOString();
+    const shouldAllow = await userSupabase.shouldAllowSubscriptionUpdate(user.id, status, newEndDate);
+
+    if (!shouldAllow) {
+      console.log(`⏭️ Skipping subscription creation for user ${user.firebase_uid} - update not allowed`);
+      return;
+    }
+
+    // Update user subscription status
+    await userSupabase.updateSubscriptionStatus(user.id, {
+      customerId: customerId,
+      status: status,
+      plan: 'premium',
+      endDate: newEndDate
+    });
+
+    console.log('✅ Subscription creation processed successfully');
+  } catch (error) {
+    console.error('❌ Error processing subscription creation:', error);
+    throw error;
+  }
+}
+
+async function handleSubscriptionUpdated(subscription) {
+  try {
+    const customerId = subscription.customer;
+    const status = subscription.status;
+
+    console.log(`🔄 Processing subscription update for customer: ${customerId}`);
+
+    const userSupabase = new UserSupabase();
+    const user = await userSupabase.findByStripeCustomerId(customerId);
+
+    if (!user) {
+      console.error('❌ User not found for customer ID:', customerId);
+      return;
+    }
+
+    // Check if subscription update should be allowed
+    const newEndDate = new Date(subscription.current_period_end * 1000).toISOString();
+    const shouldAllow = await userSupabase.shouldAllowSubscriptionUpdate(user.id, status, newEndDate);
+
+    if (!shouldAllow) {
+      console.log(`⏭️ Skipping subscription update for user ${user.firebase_uid} - update not allowed`);
+      return;
+    }
+
+    await userSupabase.updateSubscriptionStatus(user.id, {
+      customerId: customerId,
+      status: status,
+      plan: 'premium',
+      endDate: newEndDate
+    });
+
+    console.log('✅ Subscription update processed successfully');
+  } catch (error) {
+    console.error('❌ Error processing subscription update:', error);
+    throw error;
+  }
+}
+
+async function handleSubscriptionDeleted(subscription) {
+  try {
+    const customerId = subscription.customer;
+
+    console.log(`🔄 Processing subscription deletion for customer: ${customerId}`);
+
+    const userSupabase = new UserSupabase();
+    const user = await userSupabase.findByStripeCustomerId(customerId);
+
+    if (!user) {
+      console.error('❌ User not found for customer ID:', customerId);
+      return;
+    }
+
+    // Check if subscription update should be allowed
+    const shouldAllow = await userSupabase.shouldAllowSubscriptionUpdate(user.id, 'cancelled', null);
+
+    if (!shouldAllow) {
+      console.log(`⏭️ Skipping subscription deletion for user ${user.firebase_uid} - update not allowed`);
+      return;
+    }
+
+    await userSupabase.updateSubscriptionStatus(user.id, {
+      customerId: customerId,
+      status: 'cancelled',
+      plan: null,
+      endDate: new Date().toISOString()
+    });
+
+    console.log('✅ Subscription deletion processed successfully');
+  } catch (error) {
+    console.error('❌ Error processing subscription deletion:', error);
+    throw error;
+  }
+}
+
+async function handlePaymentSucceeded(invoice) {
+  console.log('Payment succeeded for invoice:', invoice.id);
+}
+
+async function handlePaymentFailed(invoice) {
+  console.log('Payment failed for invoice:', invoice.id);
+}
 
 // Body parsing middleware (for all other routes)
 app.use(express.json({ limit: '10mb' }));

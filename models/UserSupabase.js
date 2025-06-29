@@ -165,10 +165,42 @@ class UserSupabase {
         }
     }
 
-    // Update subscription status
+    // Update subscription status with race condition protection
     async updateSubscriptionStatus(userId, subscriptionData) {
         try {
             const client = this.supabase.getClient();
+
+            // First, get the current user data to check if update is needed
+            const currentUser = await this.getUserWithSubscription(userId);
+            if (!currentUser) {
+                throw new Error('User not found');
+            }
+
+            // Check if this update is newer than the current one
+            const currentEndDate = currentUser.subscription_end_date ? new Date(currentUser.subscription_end_date) : null;
+            const newEndDate = subscriptionData.endDate ? new Date(subscriptionData.endDate) : null;
+
+            // If we have a current end date and the new one is older, skip the update
+            if (currentEndDate && newEndDate && newEndDate < currentEndDate) {
+                console.log(`⏭️ Skipping subscription update - new end date (${newEndDate}) is older than current (${currentEndDate})`);
+                return currentUser;
+            }
+
+            // If status is the same and we have a current end date, check if it's a meaningful update
+            if (currentUser.subscription_status === subscriptionData.status && currentEndDate) {
+                // For active subscriptions, only update if the end date is significantly different (more than 1 day)
+                if (subscriptionData.status === 'active') {
+                    const dayInMs = 24 * 60 * 60 * 1000;
+                    const timeDiff = Math.abs(newEndDate - currentEndDate);
+                    if (timeDiff < dayInMs) {
+                        console.log(`⏭️ Skipping subscription update - no significant change in end date`);
+                        return currentUser;
+                    }
+                }
+            }
+
+            // Add a timestamp for this update to track when it was processed
+            const updateTimestamp = new Date().toISOString();
 
             const { data, error } = await client
                 .from('users')
@@ -177,7 +209,7 @@ class UserSupabase {
                     subscription_status: subscriptionData.status,
                     subscription_plan: subscriptionData.plan,
                     subscription_end_date: subscriptionData.endDate,
-                    updated_at: new Date().toISOString()
+                    updated_at: updateTimestamp
                 })
                 .eq('id', userId)
                 .select()
@@ -188,11 +220,50 @@ class UserSupabase {
                 throw error;
             }
 
-            console.log('✅ Subscription updated successfully:', data.id);
+            console.log(`✅ Subscription updated successfully: ${data.id} (${subscriptionData.status})`);
             return data;
         } catch (error) {
             console.error('❌ Failed to update subscription:', error);
             throw error;
+        }
+    }
+
+    // Check if subscription update should be allowed (for webhook race condition protection)
+    async shouldAllowSubscriptionUpdate(userId, newStatus, newEndDate) {
+        try {
+            const currentUser = await this.getUserWithSubscription(userId);
+            if (!currentUser) {
+                return false;
+            }
+
+            const currentEndDate = currentUser.subscription_end_date ? new Date(currentUser.subscription_end_date) : null;
+            const newEndDateObj = newEndDate ? new Date(newEndDate) : null;
+
+            // If status is changing from active to cancelled, always allow
+            if (currentUser.subscription_status === 'active' && newStatus === 'cancelled') {
+                return true;
+            }
+
+            // If status is changing from inactive to active, always allow
+            if (currentUser.subscription_status === 'inactive' && newStatus === 'active') {
+                return true;
+            }
+
+            // If end dates are provided, check if the new one is newer
+            if (currentEndDate && newEndDateObj) {
+                return newEndDateObj > currentEndDate;
+            }
+
+            // If no current end date but new one is provided, allow
+            if (!currentEndDate && newEndDateObj) {
+                return true;
+            }
+
+            // Default to allowing if status is different
+            return currentUser.subscription_status !== newStatus;
+        } catch (error) {
+            console.error('Error checking subscription update allowance:', error);
+            return false;
         }
     }
 

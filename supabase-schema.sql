@@ -20,6 +20,8 @@ CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON public.users(firebase_uid);
 CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
 CREATE INDEX IF NOT EXISTS idx_users_stripe_customer_id ON public.users(stripe_customer_id);
 CREATE INDEX IF NOT EXISTS idx_users_subscription_status ON public.users(subscription_status);
+CREATE INDEX IF NOT EXISTS idx_users_subscription_end_date ON public.users(subscription_end_date);
+CREATE INDEX IF NOT EXISTS idx_users_updated_at ON public.users(updated_at);
 
 -- Enable Row Level Security
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
