@@ -89,38 +89,55 @@ app.post('/api/subscription/webhook', async (req, res) => {
   }
 
   try {
-    switch (event.type) {
-      case 'checkout.session.completed':
-        await handleCheckoutSessionCompleted(event.data.object);
-        break;
+    // Set a timeout for the entire webhook processing
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Webhook processing timeout')), 8000); // 8 second timeout
+    });
 
-      case 'customer.subscription.created':
-        await handleSubscriptionCreated(event.data.object);
-        break;
+    const webhookPromise = (async () => {
+      switch (event.type) {
+        case 'checkout.session.completed':
+          await handleCheckoutSessionCompleted(event.data.object);
+          break;
 
-      case 'customer.subscription.updated':
-        await handleSubscriptionUpdated(event.data.object);
-        break;
+        case 'customer.subscription.created':
+          await handleSubscriptionCreated(event.data.object);
+          break;
 
-      case 'customer.subscription.deleted':
-        await handleSubscriptionDeleted(event.data.object);
-        break;
+        case 'customer.subscription.updated':
+          await handleSubscriptionUpdated(event.data.object);
+          break;
 
-      case 'invoice.payment_succeeded':
-        await handlePaymentSucceeded(event.data.object);
-        break;
+        case 'customer.subscription.deleted':
+          await handleSubscriptionDeleted(event.data.object);
+          break;
 
-      case 'invoice.payment_failed':
-        await handlePaymentFailed(event.data.object);
-        break;
+        case 'invoice.payment_succeeded':
+          await handlePaymentSucceeded(event.data.object);
+          break;
 
-      default:
-        console.log(`Unhandled event type: ${event.type}`);
-    }
+        case 'invoice.payment_failed':
+          await handlePaymentFailed(event.data.object);
+          break;
+
+        default:
+          console.log(`Unhandled event type: ${event.type}`);
+      }
+    })();
+
+    // Race between webhook processing and timeout
+    await Promise.race([webhookPromise, timeoutPromise]);
 
     res.json({ received: true });
   } catch (error) {
     console.error('Error handling webhook:', error);
+
+    // If it's a timeout error, still return 200 to prevent Stripe retries
+    if (error.message === 'Webhook processing timeout') {
+      console.error('Webhook timed out, but returning 200 to prevent retries');
+      return res.status(200).json({ received: true, warning: 'Processing timeout' });
+    }
+
     res.status(500).json({ error: 'Webhook handler failed' });
   }
 });
@@ -139,35 +156,44 @@ async function handleSubscriptionCreated(subscription) {
     const subscriptionId = subscription.id;
     const status = subscription.status;
 
-    // Get customer details from Stripe
-    const customer = await stripe.customers.retrieve(customerId);
-    const userEmail = customer.email;
-
-    // Find user by email
-    const user = await User.getUserByEmail(userEmail);
-    if (!user) {
-      console.error('User not found for email:', userEmail);
-      return;
-    }
-
-    // Check if subscription update should be allowed
-    const shouldAllow = await User.shouldAllowSubscriptionUpdate(user.firebaseUid, status);
-    if (!shouldAllow) {
-      console.log(`Skipping subscription creation for user ${user.firebaseUid} - update not allowed`);
-      return;
-    }
-
-    // Update user subscription status
-    await User.updateSubscriptionStatus(user.firebaseUid, {
-      status: status,
-      planId: 'premium', // Single plan
-      customerId: customerId,
-      subscriptionId: subscriptionId,
-      startDate: new Date(subscription.current_period_start * 1000),
-      endDate: new Date(subscription.current_period_end * 1000)
+    // Set timeout for this operation
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Subscription creation timeout')), 5000);
     });
 
-    console.log('Subscription created for user:', user.firebaseUid);
+    const operationPromise = (async () => {
+      // Get customer details from Stripe
+      const customer = await stripe.customers.retrieve(customerId);
+      const userEmail = customer.email;
+
+      // Find user by email
+      const user = await User.getUserByEmail(userEmail);
+      if (!user) {
+        console.error('User not found for email:', userEmail);
+        return;
+      }
+
+      // Check if subscription update should be allowed
+      const shouldAllow = await User.shouldAllowSubscriptionUpdate(user.firebaseUid, status);
+      if (!shouldAllow) {
+        console.log(`Skipping subscription creation for user ${user.firebaseUid} - update not allowed`);
+        return;
+      }
+
+      // Update user subscription status
+      await User.updateSubscriptionStatus(user.firebaseUid, {
+        status: status,
+        planId: 'premium', // Single plan
+        customerId: customerId,
+        subscriptionId: subscriptionId,
+        startDate: new Date(subscription.current_period_start * 1000),
+        endDate: new Date(subscription.current_period_end * 1000)
+      });
+
+      console.log('Subscription created for user:', user.firebaseUid);
+    })();
+
+    await Promise.race([operationPromise, timeoutPromise]);
   } catch (error) {
     console.error('Error handling subscription created:', error);
   }
