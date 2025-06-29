@@ -21,6 +21,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.3.0",
     "mongoose": "^8.16.1",
+    "node-fetch": "^3.3.2",
     "serverless-http": "^3.2.0",
     "stripe": "^14.5.0"
   },
