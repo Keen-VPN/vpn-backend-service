@@ -68,27 +68,59 @@ async function testWebhookProtection() {
         const result4 = await userModel.updateSubscriptionStatus(createdUser.id, cancelledSubscription);
         console.log('✅ Status change to cancelled was applied:', result4.subscription_status);
 
-        // Test 5: Test shouldAllowSubscriptionUpdate method
-        console.log('\n6️⃣ Testing shouldAllowSubscriptionUpdate method...');
+        // Test 5: Try to override cancelled subscription with active (should be allowed)
+        console.log('\n6️⃣ Testing cancelled → active subscription (should be allowed)...');
+        const reactivateSubscription = {
+            customerId: 'cus_reactivate',
+            status: 'active',
+            plan: 'premium',
+            endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        };
 
-        // Should allow: inactive to active
+        const result5 = await userModel.updateSubscriptionStatus(createdUser.id, reactivateSubscription);
+        console.log('✅ Reactivation was applied:', result5.subscription_status);
+
+        // Test 6: Try to override active subscription with another active (should be BLOCKED)
+        console.log('\n7️⃣ Testing active → active subscription override (should be BLOCKED)...');
+        const overrideSubscription = {
+            customerId: 'cus_override',
+            status: 'active',
+            plan: 'premium',
+            endDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString() // Even newer date
+        };
+
+        const result6 = await userModel.updateSubscriptionStatus(createdUser.id, overrideSubscription);
+        console.log('✅ Override was blocked (kept original):', result6.subscription_status, result6.subscription_end_date);
+
+        // Test 7: Test shouldAllowSubscriptionUpdate method for active override
+        console.log('\n8️⃣ Testing shouldAllowSubscriptionUpdate method for active override...');
+
+        // Should not allow: active to active
         const shouldAllow1 = await userModel.shouldAllowSubscriptionUpdate(
             createdUser.id,
-            'active',
+            'active', 
             new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
         );
-        console.log('✅ Should allow inactive → active:', shouldAllow1);
+        console.log('✅ Should not allow active → active override:', !shouldAllow1);
 
-        // Should not allow: same status with older date
+        // Should allow: active to cancelled
         const shouldAllow2 = await userModel.shouldAllowSubscriptionUpdate(
             createdUser.id,
             'cancelled',
+            null
+        );
+        console.log('✅ Should allow active → cancelled:', shouldAllow2);
+
+        // Should not allow: same status with older date
+        const shouldAllow3 = await userModel.shouldAllowSubscriptionUpdate(
+            createdUser.id,
+            'cancelled', 
             new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString() // Yesterday
         );
-        console.log('✅ Should not allow same status with older date:', !shouldAllow2);
+        console.log('✅ Should not allow same status with older date:', !shouldAllow3);
 
         // Clean up
-        console.log('\n7️⃣ Cleaning up test user...');
+        console.log('\n9️⃣ Cleaning up test user...');
         await userModel.deleteUser(createdUser.id);
         console.log('✅ Test user deleted');
 
