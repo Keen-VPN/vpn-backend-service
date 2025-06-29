@@ -4,7 +4,7 @@ import {
   createCustomerPortalSession
 } from '../config/stripe.js';
 import stripe from '../config/stripe.js';
-import User from '../models/User.js';
+import UserSupabase from '../models/UserSupabase.js';
 import { body, validationResult } from 'express-validator';
 
 const router = express.Router();
@@ -46,19 +46,34 @@ router.get('/plans', async (req, res) => {
 router.get('/status', verifyFirebaseToken, async (req, res) => {
   try {
     const firebaseUid = req.user.uid;
+    const userModel = new UserSupabase();
     
-    // Create or update user from Firebase token data
-    const user = await User.createOrUpdateUser(req.user);
+    // Get or create user
+    let user = await userModel.findByFirebaseUid(firebaseUid);
+
+    if (!user) {
+      // Create new user
+      user = await userModel.createUser({
+        firebase_uid: firebaseUid,
+        email: req.user.email,
+        display_name: req.user.name || req.user.email
+      });
+    }
     
     // Get subscription details
-    const subscriptionDetails = await User.getSubscriptionDetails(firebaseUid);
+    const userWithSubscription = await userModel.getUserWithSubscription(user.id);
     
     // Check if subscription is active
-    const hasActiveSubscription = await User.hasActiveSubscription(firebaseUid);
+    const hasActiveSubscription = userWithSubscription?.subscription_status === 'active';
 
     res.json({
       success: true,
-      subscription: subscriptionDetails,
+      subscription: {
+        status: userWithSubscription?.subscription_status || 'inactive',
+        plan: userWithSubscription?.subscription_plan || null,
+        endDate: userWithSubscription?.subscription_end_date || null,
+        customerId: userWithSubscription?.stripe_customer_id || null
+      },
       hasActiveSubscription: hasActiveSubscription
     });
   } catch (error) {
@@ -75,10 +90,19 @@ router.post('/customer-portal', verifyFirebaseToken, async (req, res) => {
   try {
     const firebaseUid = req.user.uid;
     const { returnUrl } = req.body;
+    const userModel = new UserSupabase();
 
     // Get user
-    const user = await User.getUserByFirebaseUid(firebaseUid);
-    if (!user || !user.stripeCustomerId) {
+    const user = await userModel.findByFirebaseUid(firebaseUid);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const userWithSubscription = await userModel.getUserWithSubscription(user.id);
+    if (!userWithSubscription?.stripe_customer_id) {
       return res.status(400).json({
         success: false,
         error: 'No active subscription found'
@@ -87,7 +111,7 @@ router.post('/customer-portal', verifyFirebaseToken, async (req, res) => {
 
     // Create customer portal session
     const session = await createCustomerPortalSession(
-      user.stripeCustomerId,
+      userWithSubscription.stripe_customer_id,
       returnUrl
     );
 
@@ -108,9 +132,19 @@ router.post('/customer-portal', verifyFirebaseToken, async (req, res) => {
 router.post('/create-checkout-session', verifyFirebaseToken, async (req, res) => {
   try {
     const firebaseUid = req.user.uid;
+    const userModel = new UserSupabase();
+
+    // Get or create user
+    let user = await userModel.findByFirebaseUid(firebaseUid);
     
-    // Create or update user from Firebase token data
-    const user = await User.createOrUpdateUser(req.user);
+    if (!user) {
+      // Create new user
+      user = await userModel.createUser({
+        firebase_uid: firebaseUid,
+        email: req.user.email,
+        display_name: req.user.name || req.user.email
+      });
+    }
     
     if (!user || !user.email) {
       return res.status(400).json({ success: false, error: 'User email required' });
@@ -138,7 +172,7 @@ router.post('/create-checkout-session', verifyFirebaseToken, async (req, res) =>
       success_url: process.env.CHECKOUT_SUCCESS_URL,
       cancel_url: process.env.CHECKOUT_CANCEL_URL,
       metadata: {
-        firebaseUid: user.firebaseUid,
+        firebaseUid: user.firebase_uid,
         plan: planName
       }
     });

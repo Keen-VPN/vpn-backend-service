@@ -1,6 +1,6 @@
 import express from 'express';
 import { verifyFirebaseToken } from '../config/firebase.js';
-import User from '../models/User.js';
+import UserSupabase from '../models/UserSupabase.js';
 
 const router = express.Router();
 
@@ -8,30 +8,45 @@ const router = express.Router();
 router.get('/profile', verifyFirebaseToken, async (req, res) => {
   try {
     const firebaseUid = req.user.uid;
+    const userModel = new UserSupabase();
     
     // Get or create user
-    const user = await User.createOrUpdateUser(req.user);
+    let user = await userModel.findByFirebaseUid(firebaseUid);
+
+    if (!user) {
+      // Create new user
+      user = await userModel.createUser({
+        firebase_uid: firebaseUid,
+        email: req.user.email,
+        display_name: req.user.name || req.user.email
+      });
+    }
     
     // Get subscription details
-    const subscriptionDetails = await User.getSubscriptionDetails(firebaseUid);
+    const userWithSubscription = await userModel.getUserWithSubscription(user.id);
     
     // Check if subscription is active
-    const hasActiveSubscription = await User.hasActiveSubscription(firebaseUid);
+    const hasActiveSubscription = userWithSubscription?.subscription_status === 'active';
 
     res.json({
       success: true,
       user: {
-        firebaseUid: user.firebaseUid,
+        firebaseUid: user.firebase_uid,
         email: user.email,
-        name: user.name,
-        photoURL: user.photoURL,
-        isSubscribed: user.isSubscribed,
-        subscriptionStatus: user.subscriptionStatus,
-        currentPlan: user.currentPlan,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt
+        name: user.display_name,
+        photoURL: req.user.picture,
+        isSubscribed: hasActiveSubscription,
+        subscriptionStatus: userWithSubscription?.subscription_status || 'inactive',
+        currentPlan: userWithSubscription?.subscription_plan || null,
+        createdAt: user.created_at,
+        updatedAt: user.updated_at
       },
-      subscription: subscriptionDetails,
+      subscription: {
+        status: userWithSubscription?.subscription_status || 'inactive',
+        plan: userWithSubscription?.subscription_plan || null,
+        endDate: userWithSubscription?.subscription_end_date || null,
+        customerId: userWithSubscription?.stripe_customer_id || null
+      },
       hasActiveSubscription: hasActiveSubscription
     });
   } catch (error) {
@@ -48,12 +63,21 @@ router.put('/profile', verifyFirebaseToken, async (req, res) => {
   try {
     const firebaseUid = req.user.uid;
     const { name, photoURL } = req.body;
+    const userModel = new UserSupabase();
+
+    // Find user
+    const user = await userModel.findByFirebaseUid(firebaseUid);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
 
     const updateData = {};
-    if (name !== undefined) updateData.name = name;
-    if (photoURL !== undefined) updateData.photoURL = photoURL;
+    if (name !== undefined) updateData.display_name = name;
 
-    await User.updateProfile(firebaseUid, updateData);
+    await userModel.updateUser(user.id, updateData);
 
     res.json({
       success: true,
@@ -72,12 +96,25 @@ router.put('/profile', verifyFirebaseToken, async (req, res) => {
 router.get('/can-access-vpn', verifyFirebaseToken, async (req, res) => {
   try {
     const firebaseUid = req.user.uid;
+    const userModel = new UserSupabase();
     
     // Get or create user
-    await User.createOrUpdateUser(req.user);
+    let user = await userModel.findByFirebaseUid(firebaseUid);
+
+    if (!user) {
+      // Create new user
+      user = await userModel.createUser({
+        firebase_uid: firebaseUid,
+        email: req.user.email,
+        display_name: req.user.name || req.user.email
+      });
+    }
+
+    // Get subscription details
+    const userWithSubscription = await userModel.getUserWithSubscription(user.id);
     
-    // Check if user has active subscription
-    const hasActiveSubscription = await User.hasActiveSubscription(firebaseUid);
+    // Check if subscription is active
+    const hasActiveSubscription = userWithSubscription?.subscription_status === 'active';
     
     if (hasActiveSubscription) {
       res.json({
@@ -106,28 +143,43 @@ router.get('/can-access-vpn', verifyFirebaseToken, async (req, res) => {
 router.post('/init', verifyFirebaseToken, async (req, res) => {
   try {
     const firebaseUid = req.user.uid;
+    const userModel = new UserSupabase();
     
     // Get or create user
-    const user = await User.createOrUpdateUser(req.user);
+    let user = await userModel.findByFirebaseUid(firebaseUid);
+
+    if (!user) {
+      // Create new user
+      user = await userModel.createUser({
+        firebase_uid: firebaseUid,
+        email: req.user.email,
+        display_name: req.user.name || req.user.email
+      });
+    }
     
     // Get subscription details
-    const subscriptionDetails = await User.getSubscriptionDetails(firebaseUid);
+    const userWithSubscription = await userModel.getUserWithSubscription(user.id);
     
     // Check if subscription is active
-    const hasActiveSubscription = await User.hasActiveSubscription(firebaseUid);
+    const hasActiveSubscription = userWithSubscription?.subscription_status === 'active';
 
     res.json({
       success: true,
       user: {
-        firebaseUid: user.firebaseUid,
+        firebaseUid: user.firebase_uid,
         email: user.email,
-        name: user.name,
-        photoURL: user.photoURL,
-        isSubscribed: user.isSubscribed,
-        subscriptionStatus: user.subscriptionStatus,
-        currentPlan: user.currentPlan
+        name: user.display_name,
+        photoURL: req.user.picture,
+        isSubscribed: hasActiveSubscription,
+        subscriptionStatus: userWithSubscription?.subscription_status || 'inactive',
+        currentPlan: userWithSubscription?.subscription_plan || null
       },
-      subscription: subscriptionDetails,
+      subscription: {
+        status: userWithSubscription?.subscription_status || 'inactive',
+        plan: userWithSubscription?.subscription_plan || null,
+        endDate: userWithSubscription?.subscription_end_date || null,
+        customerId: userWithSubscription?.stripe_customer_id || null
+      },
       hasActiveSubscription: hasActiveSubscription
     });
   } catch (error) {
