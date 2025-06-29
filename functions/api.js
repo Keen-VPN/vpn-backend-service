@@ -8,6 +8,10 @@ import database from '../config/database.js';
 import authRoutes from '../routes/auth.js';
 import subscriptionRoutes from '../routes/subscription.js';
 
+console.log('Imports loaded successfully');
+console.log('authRoutes type:', typeof authRoutes);
+console.log('subscriptionRoutes type:', typeof subscriptionRoutes);
+
 dotenv.config();
 
 const app = express();
@@ -72,8 +76,21 @@ app.use(async (req, res, next) => {
 });
 
 // API routes
-app.use('/auth', authRoutes);
-app.use('/subscription', subscriptionRoutes);
+console.log('Registering auth routes...');
+app.use('/api/auth', authRoutes);
+console.log('Registering subscription routes...');
+app.use('/api/subscription', subscriptionRoutes);
+console.log('Routes registered successfully');
+
+// Debug route to test subscription router
+app.get('/debug-subscription', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Subscription router is working',
+    subscriptionRoutes: typeof subscriptionRoutes,
+    authRoutes: typeof authRoutes
+  });
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -213,6 +230,12 @@ app.use((err, req, res, next) => {
         error: 'Internal server error',
         message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
     });
+});
+
+// Catch-all logger for unmatched requests
+app.use((req, res, next) => {
+  console.log('Unmatched request path:', req.path);
+  next();
 });
 
 // 404 handler
