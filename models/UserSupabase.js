@@ -176,6 +176,12 @@ class UserSupabase {
                 throw new Error('User not found');
             }
 
+            // CRITICAL: Never override an active subscription with another active subscription
+            if (currentUser.subscription_status === 'active' && subscriptionData.status === 'active') {
+                console.log(`⏭️ Skipping subscription update - cannot override active subscription for user ${userId}`);
+                return currentUser;
+            }
+
             // Check if this update is newer than the current one
             const currentEndDate = currentUser.subscription_end_date ? new Date(currentUser.subscription_end_date) : null;
             const newEndDate = subscriptionData.endDate ? new Date(subscriptionData.endDate) : null;
@@ -233,6 +239,12 @@ class UserSupabase {
         try {
             const currentUser = await this.getUserWithSubscription(userId);
             if (!currentUser) {
+                return false;
+            }
+
+            // CRITICAL: Never allow overriding an active subscription with another active subscription
+            if (currentUser.subscription_status === 'active' && newStatus === 'active') {
+                console.log(`⏭️ Blocking subscription update - cannot override active subscription for user ${userId}`);
                 return false;
             }
 
