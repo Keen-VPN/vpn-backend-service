@@ -11,47 +11,95 @@ class Database {
   constructor() {
     this.connection = null;
     this.connectionPromise = null;
+    this.isConnecting = false;
   }
 
   async connect() {
     try {
-      // If already connecting, return the existing promise
-      if (this.connectionPromise) {
-        return this.connectionPromise;
-      }
-
-      // If already connected, return the connection
+      // If already connected, return immediately
       if (this.isConnected()) {
+        console.log('✅ Using existing MongoDB connection');
         return this.connection;
       }
 
-      // Create new connection promise
+      // If already connecting, wait for the existing promise
+      if (this.isConnecting && this.connectionPromise) {
+        console.log('⏳ Waiting for existing connection...');
+        return await this.connectionPromise;
+      }
+
+      // Start new connection
+      this.isConnecting = true;
+      console.log('🔄 Connecting to MongoDB...');
+
       this.connectionPromise = mongoose.connect(MONGODB_URI, {
-        serverSelectionTimeoutMS: 5000, // 5 second timeout
-        socketTimeoutMS: 45000, // 45 second timeout
+        // Connection timeouts
+        serverSelectionTimeoutMS: 3000, // 3 second timeout for server selection
+        socketTimeoutMS: 30000, // 30 second timeout for operations
+        connectTimeoutMS: 10000, // 10 second timeout for initial connection
+
+        // Connection pooling for serverless
+        maxPoolSize: 1, // Single connection for serverless
+        minPoolSize: 0, // Start with 0 connections
+        maxIdleTimeMS: 60000, // Keep connection alive for 1 minute
+
+        // Buffer settings
         bufferCommands: false, // Disable mongoose buffering
         bufferMaxEntries: 0, // Disable mongoose buffering
-        maxPoolSize: 1, // Limit connection pool for serverless
-        minPoolSize: 0, // Start with 0 connections
-        maxIdleTimeMS: 30000, // Close connections after 30 seconds of inactivity
+
+        // Retry settings
+        retryWrites: true,
+        retryReads: true,
+
+        // Compression
+        compressors: ['zlib'],
+
+        // SSL settings
+        ssl: true,
+        sslValidate: true,
+
+        // Heartbeat
+        heartbeatFrequencyMS: 10000, // 10 second heartbeat
       });
 
       this.connection = await this.connectionPromise;
       
       console.log('✅ Connected to MongoDB with Mongoose');
       
+      // Set up connection event handlers
+      mongoose.connection.on('error', (error) => {
+        console.error('❌ MongoDB connection error:', error);
+        this.resetConnection();
+      });
+
+      mongoose.connection.on('disconnected', () => {
+        console.log('⚠️ MongoDB disconnected');
+        this.resetConnection();
+      });
+
+      mongoose.connection.on('reconnected', () => {
+        console.log('🔄 MongoDB reconnected');
+      });
+
       // Create indexes for better performance
       await this.createIndexes();
       
-      // Clear the promise after successful connection
+      // Reset connection state
+      this.isConnecting = false;
       this.connectionPromise = null;
 
       return this.connection;
     } catch (error) {
       console.error('❌ MongoDB connection error:', error);
-      this.connectionPromise = null;
+      this.resetConnection();
       throw error;
     }
+  }
+
+  resetConnection() {
+    this.connection = null;
+    this.connectionPromise = null;
+    this.isConnecting = false;
   }
 
   async createIndexes() {
@@ -75,6 +123,23 @@ class Database {
     if (this.connection) {
       await mongoose.connection.close();
       console.log('✅ MongoDB connection closed');
+      this.resetConnection();
+    }
+  }
+
+  // Health check method
+  async healthCheck() {
+    try {
+      if (!this.isConnected()) {
+        return { status: 'disconnected', readyState: mongoose.connection.readyState };
+      }
+
+      // Simple ping to check if connection is alive
+      await mongoose.connection.db.admin().ping();
+      return { status: 'healthy', readyState: mongoose.connection.readyState };
+    } catch (error) {
+      console.error('❌ Database health check failed:', error);
+      return { status: 'unhealthy', error: error.message, readyState: mongoose.connection.readyState };
     }
   }
 }

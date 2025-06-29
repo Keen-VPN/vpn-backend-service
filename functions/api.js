@@ -156,31 +156,39 @@ async function handleSubscriptionCreated(subscription) {
     const subscriptionId = subscription.id;
     const status = subscription.status;
 
-    // Set timeout for this operation
+    // Set timeout for this operation (increased to 15 seconds)
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Subscription creation timeout')), 5000);
+      setTimeout(() => reject(new Error('Subscription creation timeout')), 15000);
     });
 
     const operationPromise = (async () => {
+      console.log(`🔄 Processing subscription creation for customer: ${customerId}`);
+
       // Get customer details from Stripe
+      console.log('📞 Fetching customer details from Stripe...');
       const customer = await stripe.customers.retrieve(customerId);
       const userEmail = customer.email;
+      console.log(`📧 Found customer email: ${userEmail}`);
 
       // Find user by email
+      console.log('🔍 Looking up user by email...');
       const user = await User.getUserByEmail(userEmail);
       if (!user) {
-        console.error('User not found for email:', userEmail);
+        console.error('❌ User not found for email:', userEmail);
         return;
       }
+      console.log(`👤 Found user: ${user.firebaseUid}`);
 
       // Check if subscription update should be allowed
+      console.log('✅ Checking if subscription update is allowed...');
       const shouldAllow = await User.shouldAllowSubscriptionUpdate(user.firebaseUid, status);
       if (!shouldAllow) {
-        console.log(`Skipping subscription creation for user ${user.firebaseUid} - update not allowed`);
+        console.log(`⏭️ Skipping subscription creation for user ${user.firebaseUid} - update not allowed`);
         return;
       }
 
       // Update user subscription status
+      console.log('💾 Updating user subscription status...');
       await User.updateSubscriptionStatus(user.firebaseUid, {
         status: status,
         planId: 'premium', // Single plan
@@ -190,12 +198,24 @@ async function handleSubscriptionCreated(subscription) {
         endDate: new Date(subscription.current_period_end * 1000)
       });
 
-      console.log('Subscription created for user:', user.firebaseUid);
+      console.log('✅ Subscription created for user:', user.firebaseUid);
     })();
 
     await Promise.race([operationPromise, timeoutPromise]);
   } catch (error) {
-    console.error('Error handling subscription created:', error);
+    console.error('❌ Error handling subscription created:', error);
+
+    // Log more details for debugging
+    if (error.message === 'Subscription creation timeout') {
+      console.error('⏰ Subscription creation timed out after 15 seconds');
+    } else {
+      console.error('🔍 Error details:', {
+        message: error.message,
+        stack: error.stack,
+        customerId: subscription?.customer,
+        subscriptionId: subscription?.id
+      });
+    }
   }
 }
 
@@ -295,15 +315,53 @@ async function handlePaymentFailed(invoice) {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Database connection middleware
+// Database connection middleware with caching
+let dbConnectionPromise = null;
+let lastConnectionTime = 0;
+const CONNECTION_CACHE_DURATION = 30000; // 30 seconds
+
 app.use(async (req, res, next) => {
     try {
+      const now = Date.now();
+
+      // Check if we need to connect
         if (!database.isConnected()) {
-            await database.connect();
+          console.log('🔄 Database not connected, connecting...');
+
+          // Use cached connection if it's recent
+          if (dbConnectionPromise && (now - lastConnectionTime) < CONNECTION_CACHE_DURATION) {
+            console.log('⏳ Using cached connection promise...');
+            await dbConnectionPromise;
+          } else {
+            // Create new connection
+            dbConnectionPromise = database.connect();
+            lastConnectionTime = now;
+            await dbConnectionPromise;
+          }
+        } else {
+          // Verify connection is still healthy
+          const health = await database.healthCheck();
+          if (health.status !== 'healthy') {
+            console.log('⚠️ Database unhealthy, reconnecting...');
+            await database.close();
+            dbConnectionPromise = database.connect();
+            lastConnectionTime = now;
+            await dbConnectionPromise;
+          }
         }
         next();
     } catch (error) {
-        console.error('Database connection error:', error);
+      console.error('❌ Database connection error:', error);
+
+      // Clear cached connection on error
+      dbConnectionPromise = null;
+
+      // For webhook requests, don't fail the request
+      if (req.path === '/api/subscription/webhook') {
+        console.log('⚠️ Database error in webhook, continuing without DB...');
+        return next();
+      }
+
         res.status(500).json({
             success: false,
             error: 'Database connection failed'
