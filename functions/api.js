@@ -4,11 +4,13 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-import database from '../config/database.js';
+import { getInstance as getSupabaseInstance } from '../config/supabase.js';
 import authRoutes from '../routes/auth.js';
 import subscriptionRoutes from '../routes/subscription.js';
 import stripe from '../config/stripe.js';
 import User from '../models/User.js';
+import UserSupabase from '../models/UserSupabase.js';
+import admin from 'firebase-admin';
 
 console.log('Imports loaded successfully');
 console.log('authRoutes type:', typeof authRoutes);
@@ -25,7 +27,6 @@ app.set('trust proxy', 1);
 app.use(helmet());
 
 // CORS configuration for Netlify
-// CORS configuration
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
     ? [
@@ -66,13 +67,58 @@ const limiter = rateLimit({
     },
     skip: (req) => {
         // Skip rate limiting for health checks
-        return req.path === '/health';
+      return req.path === '/api/health';
     }
 });
 app.use('/', limiter);
 
+// Initialize Supabase
+const supabase = getSupabaseInstance();
+
+// Health check endpoint
+app.get('/api/health', async (req, res) => {
+  try {
+    const startTime = Date.now();
+
+    // Check Supabase connection
+    const dbHealth = await supabase.healthCheck();
+
+    const totalResponseTime = Date.now() - startTime;
+
+    const healthData = {
+      status: dbHealth.status === 'healthy' ? 'healthy' : 'degraded',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV || 'development',
+      services: {
+        database: {
+          status: dbHealth.status,
+          responseTime: dbHealth.responseTime,
+          error: dbHealth.error || null
+        }
+      },
+      responseTime: totalResponseTime
+    };
+
+    const statusCode = dbHealth.status === 'healthy' ? 200 : 503;
+    res.status(statusCode).json(healthData);
+
+  } catch (error) {
+    console.error('Health check error:', error);
+    res.status(500).json({
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      error: 'Internal server error during health check'
+    });
+  }
+});
+
 // Webhook route needs raw body - must come BEFORE JSON parsing
 app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
+
+// Body parsing middleware (for all other routes)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Webhook handler for Stripe events
 app.post('/api/subscription/webhook', async (req, res) => {
@@ -170,52 +216,33 @@ async function handleSubscriptionCreated(subscription) {
       const userEmail = customer.email;
       console.log(`📧 Found customer email: ${userEmail}`);
 
-      // Find user by email
+      // Find user by email using Supabase
       console.log('🔍 Looking up user by email...');
-      const user = await User.getUserByEmail(userEmail);
+      const userSupabase = new UserSupabase();
+      const user = await userSupabase.findByEmail(userEmail);
       if (!user) {
         console.error('❌ User not found for email:', userEmail);
         return;
       }
-      console.log(`👤 Found user: ${user.firebaseUid}`);
-
-      // Check if subscription update should be allowed
-      console.log('✅ Checking if subscription update is allowed...');
-      const shouldAllow = await User.shouldAllowSubscriptionUpdate(user.firebaseUid, status);
-      if (!shouldAllow) {
-        console.log(`⏭️ Skipping subscription creation for user ${user.firebaseUid} - update not allowed`);
-        return;
-      }
+      console.log(`👤 Found user: ${user.firebase_uid}`);
 
       // Update user subscription status
       console.log('💾 Updating user subscription status...');
-      await User.updateSubscriptionStatus(user.firebaseUid, {
-        status: status,
-        planId: 'premium', // Single plan
+      await userSupabase.updateSubscriptionStatus(user.id, {
         customerId: customerId,
-        subscriptionId: subscriptionId,
-        startDate: new Date(subscription.current_period_start * 1000),
-        endDate: new Date(subscription.current_period_end * 1000)
+        status: status,
+        plan: 'premium', // Single plan
+        endDate: new Date(subscription.current_period_end * 1000).toISOString()
       });
 
-      console.log('✅ Subscription created for user:', user.firebaseUid);
+      console.log('✅ Subscription creation processed successfully');
     })();
 
+    // Race between operation and timeout
     await Promise.race([operationPromise, timeoutPromise]);
   } catch (error) {
-    console.error('❌ Error handling subscription created:', error);
-
-    // Log more details for debugging
-    if (error.message === 'Subscription creation timeout') {
-      console.error('⏰ Subscription creation timed out after 15 seconds');
-    } else {
-      console.error('🔍 Error details:', {
-        message: error.message,
-        stack: error.stack,
-        customerId: subscription?.customer,
-        subscriptionId: subscription?.id
-      });
-    }
+    console.error('❌ Error processing subscription creation:', error);
+    throw error;
   }
 }
 
@@ -224,33 +251,27 @@ async function handleSubscriptionUpdated(subscription) {
     const customerId = subscription.customer;
     const status = subscription.status;
 
-    // Find user by Stripe customer ID
-    const user = await User.getUserByStripeCustomerId(customerId);
+    console.log(`🔄 Processing subscription update for customer: ${customerId}`);
+
+    const userSupabase = new UserSupabase();
+    const user = await userSupabase.findByStripeCustomerId(customerId);
+
     if (!user) {
-      console.error('User not found for customer:', customerId);
+      console.error('❌ User not found for customer ID:', customerId);
       return;
     }
 
-    // Check if subscription update should be allowed
-    const shouldAllow = await User.shouldAllowSubscriptionUpdate(user.firebaseUid, status);
-    if (!shouldAllow) {
-      console.log(`Skipping subscription update for user ${user.firebaseUid} - update not allowed`);
-      return;
-    }
-
-    // Update user subscription status
-    await User.updateSubscriptionStatus(user.firebaseUid, {
-      status: status,
-      planId: 'premium', // Single plan
+    await userSupabase.updateSubscriptionStatus(user.id, {
       customerId: customerId,
-      subscriptionId: subscription.id,
-      startDate: new Date(subscription.current_period_start * 1000),
-      endDate: new Date(subscription.current_period_end * 1000)
+      status: status,
+      plan: 'premium',
+      endDate: new Date(subscription.current_period_end * 1000).toISOString()
     });
 
-    console.log('Subscription updated for user:', user.firebaseUid);
+    console.log('✅ Subscription update processed successfully');
   } catch (error) {
-    console.error('Error handling subscription updated:', error);
+    console.error('❌ Error processing subscription update:', error);
+    throw error;
   }
 }
 
@@ -258,276 +279,59 @@ async function handleSubscriptionDeleted(subscription) {
   try {
     const customerId = subscription.customer;
 
-    // Find user by Stripe customer ID
-    const user = await User.getUserByStripeCustomerId(customerId);
+    console.log(`🔄 Processing subscription deletion for customer: ${customerId}`);
+
+    const userSupabase = new UserSupabase();
+    const user = await userSupabase.findByStripeCustomerId(customerId);
+
     if (!user) {
-      console.error('User not found for customer:', customerId);
+      console.error('❌ User not found for customer ID:', customerId);
       return;
     }
 
-    // Check if subscription update should be allowed
-    const shouldAllow = await User.shouldAllowSubscriptionUpdate(user.firebaseUid, 'cancelled');
-    if (!shouldAllow) {
-      console.log(`Skipping subscription deletion for user ${user.firebaseUid} - update not allowed`);
-      return;
-    }
-
-    // Update user subscription status to cancelled
-    await User.updateSubscriptionStatus(user.firebaseUid, {
-      status: 'cancelled',
-      planId: null,
+    await userSupabase.updateSubscriptionStatus(user.id, {
       customerId: customerId,
-      subscriptionId: subscription.id,
-      startDate: null,
-      endDate: null
+      status: 'cancelled',
+      plan: null,
+      endDate: new Date().toISOString()
     });
 
-    console.log('Subscription cancelled for user:', user.firebaseUid);
+    console.log('✅ Subscription deletion processed successfully');
   } catch (error) {
-    console.error('Error handling subscription deleted:', error);
+    console.error('❌ Error processing subscription deletion:', error);
+    throw error;
   }
 }
 
 async function handlePaymentSucceeded(invoice) {
   console.log('Payment succeeded for invoice:', invoice.id);
-  // Payment success is handled by subscription events
+  // Handle successful payment if needed
 }
 
 async function handlePaymentFailed(invoice) {
-  try {
-    const customerId = invoice.customer;
-
-    // Find user by Stripe customer ID
-    const user = await User.getUserByStripeCustomerId(customerId);
-    if (!user) {
-      console.error('User not found for customer:', customerId);
-      return;
-    }
-
-    console.log('Payment failed for user:', user.firebaseUid);
-    // Handle payment failure logic here
-  } catch (error) {
-    console.error('Error handling payment failed:', error);
-  }
+  console.log('Payment failed for invoice:', invoice.id);
+  // Handle failed payment if needed
 }
 
-// Body parsing middleware (for all other routes)
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Database connection middleware with caching
-let dbConnectionPromise = null;
-let lastConnectionTime = 0;
-const CONNECTION_CACHE_DURATION = 30000; // 30 seconds
-
-app.use(async (req, res, next) => {
-    try {
-      // For webhook requests, skip database connection check
-      // Let the User model handle its own connections
-      if (req.path === '/api/subscription/webhook') {
-        return next();
-      }
-
-      // For other requests, ensure database is connected
-        if (!database.isConnected()) {
-          console.log('🔄 Database not connected, connecting...');
-
-          // Use cached connection if it's recent
-          const now = Date.now();
-          if (dbConnectionPromise && (now - lastConnectionTime) < CONNECTION_CACHE_DURATION) {
-            console.log('⏳ Using cached connection promise...');
-            await dbConnectionPromise;
-          } else {
-            // Create new connection
-            dbConnectionPromise = database.connect();
-            lastConnectionTime = now;
-            await dbConnectionPromise;
-          }
-        }
-        next();
-    } catch (error) {
-      console.error('❌ Database connection error:', error);
-
-      // Clear cached connection on error
-      dbConnectionPromise = null;
-
-        res.status(500).json({
-            success: false,
-            error: 'Database connection failed'
-        });
-    }
-});
-
-// API routes
+// Register routes
 console.log('Registering auth routes...');
 app.use('/api/auth', authRoutes);
+
 console.log('Registering subscription routes...');
 app.use('/api/subscription', subscriptionRoutes);
+
 console.log('Routes registered successfully');
-
-// Debug route to test subscription router
-app.get('/debug-subscription', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Subscription router is working',
-    subscriptionRoutes: typeof subscriptionRoutes,
-    authRoutes: typeof authRoutes
-  });
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development',
-        platform: 'netlify-functions'
-    });
-});
-
-// Stripe checkout success page
-app.get('/success', (req, res) => {
-    res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Payment Successful - KeenVPN</title>
-      <style>
-        body { 
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          margin: 0; 
-          padding: 0; 
-          display: flex; 
-          align-items: center; 
-          justify-content: center; 
-          min-height: 100vh; 
-          color: white; 
-        }
-        .container { 
-          text-align: center; 
-          background: rgba(255,255,255,0.1); 
-          padding: 40px; 
-          border-radius: 20px; 
-          backdrop-filter: blur(10px); 
-          box-shadow: 0 8px 32px rgba(0,0,0,0.1); 
-        }
-        h1 { margin-bottom: 20px; font-size: 2.5em; }
-        p { margin-bottom: 30px; font-size: 1.2em; opacity: 0.9; }
-        .btn { 
-          background: rgba(255,255,255,0.2); 
-          color: white; 
-          padding: 15px 30px; 
-          border: none; 
-          border-radius: 10px; 
-          font-size: 1.1em; 
-          cursor: pointer; 
-          text-decoration: none; 
-          display: inline-block; 
-          transition: all 0.3s ease; 
-        }
-        .btn:hover { 
-          background: rgba(255,255,255,0.3); 
-          transform: translateY(-2px); 
-        }
-        .icon { font-size: 4em; margin-bottom: 20px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="icon">✅</div>
-        <h1>Payment Successful!</h1>
-        <p>Your KeenVPN subscription has been activated. You can now close this window and return to the app.</p>
-        <a href="keenvpn://success" class="btn">Return to App</a>
-      </div>
-    </body>
-    </html>
-  `);
-});
-
-// Stripe checkout cancel page
-app.get('/cancel', (req, res) => {
-    res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Payment Cancelled - KeenVPN</title>
-      <style>
-        body { 
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-          background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
-          margin: 0; 
-          padding: 0; 
-          display: flex; 
-          align-items: center; 
-          justify-content: center; 
-          min-height: 100vh; 
-          color: white; 
-        }
-        .container { 
-          text-align: center; 
-          background: rgba(255,255,255,0.1); 
-          padding: 40px; 
-          border-radius: 20px; 
-          backdrop-filter: blur(10px); 
-          box-shadow: 0 8px 32px rgba(0,0,0,0.1); 
-        }
-        h1 { margin-bottom: 20px; font-size: 2.5em; }
-        p { margin-bottom: 30px; font-size: 1.2em; opacity: 0.9; }
-        .btn { 
-          background: rgba(255,255,255,0.2); 
-          color: white; 
-          padding: 15px 30px; 
-          border: none; 
-          border-radius: 10px; 
-          font-size: 1.1em; 
-          cursor: pointer; 
-          text-decoration: none; 
-          display: inline-block; 
-          transition: all 0.3s ease; 
-        }
-        .btn:hover { 
-          background: rgba(255,255,255,0.3); 
-          transform: translateY(-2px); 
-        }
-        .icon { font-size: 4em; margin-bottom: 20px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="icon">❌</div>
-        <h1>Payment Cancelled</h1>
-        <p>Your payment was cancelled. You can try again anytime from the app.</p>
-        <a href="keenvpn://cancel" class="btn">Return to App</a>
-      </div>
-    </body>
-    </html>
-  `);
-});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err);
-    res.status(500).json({
-        success: false,
-        error: 'Internal server error',
-        message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
-    });
-});
-
-// Catch-all logger for unmatched requests
-app.use((req, res, next) => {
-  console.log('Unmatched request path:', req.path);
-  next();
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // 404 handler
 app.use('*', (req, res) => {
-    res.status(404).json({
-        success: false,
-        error: 'Route not found'
-    });
+  res.status(404).json({ error: 'Route not found' });
 });
 
-// Export the serverless handler
+// Export for Netlify Functions
 export const handler = serverless(app); 

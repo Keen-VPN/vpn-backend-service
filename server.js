@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-import database from './config/database.js';
+import { getInstance as getSupabaseInstance } from './config/supabase.js';
 import authRoutes from './routes/auth.js';
 import subscriptionRoutes from './routes/subscription.js';
 
@@ -52,6 +52,9 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+// Initialize Supabase
+const supabase = getSupabaseInstance();
+
 // Webhook route needs raw body - must come BEFORE JSON parsing
 app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
 
@@ -64,12 +67,40 @@ app.use('/api/auth', authRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
+app.get('/health', async (req, res) => {
+  try {
+    const startTime = Date.now();
+
+    // Check Supabase connection
+    const dbHealth = await supabase.healthCheck();
+
+    const totalResponseTime = Date.now() - startTime;
+
+    const healthData = {
+      status: dbHealth.status === 'healthy' ? 'healthy' : 'degraded',
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
+      services: {
+        database: {
+          status: dbHealth.status,
+          responseTime: dbHealth.responseTime,
+          error: dbHealth.error || null
+        }
+      },
+      responseTime: totalResponseTime
+    };
+
+    const statusCode = dbHealth.status === 'healthy' ? 200 : 503;
+    res.status(statusCode).json(healthData);
+
+  } catch (error) {
+    console.error('Health check error:', error);
+    res.status(500).json({
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      error: 'Internal server error during health check'
+    });
+  }
 });
 
 // Stripe checkout success page
@@ -213,8 +244,10 @@ app.use('*', (req, res) => {
 // Start server
 async function startServer() {
   try {
-    // Connect to MongoDB
-    await database.connect();
+    // Initialize Supabase
+    console.log('🔄 Initializing Supabase...');
+    supabase.init();
+    console.log('✅ Supabase initialized successfully');
     
     // Start Express server
     app.listen(PORT, () => {
@@ -231,13 +264,11 @@ async function startServer() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('🛑 SIGTERM received, shutting down gracefully');
-  await database.close();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('🛑 SIGINT received, shutting down gracefully');
-  await database.close();
   process.exit(0);
 });
 
