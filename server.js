@@ -396,7 +396,7 @@ app.get('/success', (req, res) => {
         <div class="icon">✅</div>
         <h1>Payment Successful!</h1>
         <p>Your KeenVPN subscription has been activated. You can now close this window and return to the app.</p>
-        <a href="keenvpn://success" class="btn">Return to App</a>
+        <a href="vpnkeen://success" class="btn">Return to App</a>
       </div>
     </body>
     </html>
@@ -456,7 +456,7 @@ app.get('/cancel', (req, res) => {
         <div class="icon">❌</div>
         <h1>Payment Cancelled</h1>
         <p>Your payment was cancelled. You can try again anytime from the app.</p>
-        <a href="keenvpn://cancel" class="btn">Return to App</a>
+        <a href="vpnkeen://cancel" class="btn">Return to App</a>
       </div>
     </body>
     </html>
@@ -490,10 +490,11 @@ async function startServer() {
     console.log('✅ Supabase initialized successfully');
     
     // Start Express server
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+      console.log(`🌐 Network access: http://0.0.0.0:${PORT}`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);

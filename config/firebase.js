@@ -37,6 +37,7 @@ export const verifyFirebaseToken = async (req, res, next) => {
     }
 
     const token = authHeader.split('Bearer ')[1];
+    console.log('Firebase token:', token);
     
     const decodedToken = await admin.auth().verifyIdToken(token);
     req.user = decodedToken;

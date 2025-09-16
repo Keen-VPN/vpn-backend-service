@@ -39,6 +39,7 @@ class UserSupabase {
     // Find user by Firebase UID
     async findByFirebaseUid(firebaseUid) {
         try {
+            console.log('🔍 UserSupabase: Searching for user by Firebase UID:', firebaseUid);
             const client = this.supabase.getClient();
 
             const { data, error } = await client
@@ -50,14 +51,17 @@ class UserSupabase {
             if (error) {
                 if (error.code === 'PGRST116') {
                     // No rows returned
+                    console.log('🔍 UserSupabase: No user found by Firebase UID:', firebaseUid);
                     return null;
                 }
+                console.error('❌ UserSupabase: Error finding user by Firebase UID:', error);
                 throw error;
             }
 
+            console.log('✅ UserSupabase: Found user by Firebase UID:', data.id);
             return data;
         } catch (error) {
-            console.error('❌ Failed to find user by Firebase UID:', error);
+            console.error('❌ UserSupabase: Failed to find user by Firebase UID:', error);
             throw error;
         }
     }
@@ -65,6 +69,7 @@ class UserSupabase {
     // Find user by email
     async findByEmail(email) {
         try {
+            console.log('🔍 UserSupabase: Searching for user by email:', email);
             const client = this.supabase.getClient();
 
             const { data, error } = await client
@@ -76,14 +81,17 @@ class UserSupabase {
             if (error) {
                 if (error.code === 'PGRST116') {
                     // No rows returned
+                    console.log('🔍 UserSupabase: No user found by email:', email);
                     return null;
                 }
+                console.error('❌ UserSupabase: Error finding user by email:', error);
                 throw error;
             }
 
+            console.log('✅ UserSupabase: Found user by email:', data.id);
             return data;
         } catch (error) {
-            console.error('❌ Failed to find user by email:', error);
+            console.error('❌ UserSupabase: Failed to find user by email:', error);
             throw error;
         }
     }
@@ -345,6 +353,47 @@ class UserSupabase {
             return true;
         } catch (error) {
             console.error('❌ Failed to delete user:', error);
+            throw error;
+        }
+    }
+
+    // Complete account deletion (removes all user data)
+    async deleteAccount(userId) {
+        try {
+            const client = this.supabase.getClient();
+
+            // First, get the user to check if they exist and get Stripe customer ID
+            const user = await this.findById(userId);
+            if (!user) {
+                throw new Error('User not found');
+            }
+
+            console.log(`🗑️ Starting account deletion for user ${userId} (${user.email})`);
+
+            // Note: Stripe subscription cancellation should be handled separately
+            // via webhooks or direct Stripe API calls if needed
+
+            // Delete user data from database
+            const { error } = await client
+                .from('users')
+                .delete()
+                .eq('id', userId);
+
+            if (error) {
+                console.error('❌ Error deleting user account:', error);
+                throw error;
+            }
+
+            console.log(`✅ Account deleted successfully for user ${userId} (${user.email})`);
+            
+            return {
+                success: true,
+                deletedUserId: userId,
+                deletedEmail: user.email,
+                stripeCustomerId: user.stripe_customer_id || null
+            };
+        } catch (error) {
+            console.error('❌ Failed to delete account:', error);
             throw error;
         }
     }

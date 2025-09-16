@@ -6,6 +6,7 @@ import {
 import stripe from '../config/stripe.js';
 import UserSupabase from '../models/UserSupabase.js';
 import { body, validationResult } from 'express-validator';
+import fetch from 'node-fetch';
 
 const router = express.Router();
 
@@ -41,6 +42,128 @@ router.get('/plans', async (req, res) => {
     });
   }
 });
+
+// Get subscription status with OAuth token (for Swift app)
+router.post('/status-oauth', async (req, res) => {
+  try {
+    const { token } = req.body;
+    
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: 'No token provided'
+      });
+    }
+    
+    console.log('Getting subscription status for Swift app');
+    
+    // Verify the Google OAuth token
+    const googleUserInfo = await verifyGoogleOAuthToken(token);
+    
+    if (!googleUserInfo) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid OAuth token'
+      });
+    }
+    
+    const userModel = new UserSupabase();
+    
+    // Get user by Google user ID
+    // First try to find by email (in case user was created with Firebase before)
+    let user = await userModel.findByEmail(googleUserInfo.email);
+    
+    if (!user) {
+      // Try to find by Firebase UID (using Google sub as firebase_uid)
+      user = await userModel.findByFirebaseUid(googleUserInfo.sub);
+    }
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+    
+    // Get subscription details
+    const userWithSubscription = await userModel.getUserWithSubscription(user.id);
+    
+    // Check if subscription is active
+    const hasActiveSubscription = userWithSubscription?.subscription_status === 'active';
+
+    res.json({
+      success: true,
+      subscription: {
+        status: userWithSubscription?.subscription_status || 'inactive',
+        plan: userWithSubscription?.subscription_plan || null,
+        endDate: userWithSubscription?.subscription_end_date || null,
+        customerId: userWithSubscription?.stripe_customer_id || null
+      },
+      hasActiveSubscription: hasActiveSubscription
+    });
+  } catch (error) {
+    console.error('Error getting subscription status with OAuth:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get subscription status'
+    });
+  }
+  });
+ 
+// Helper function to verify Google OAuth token (duplicate from auth.js)
+async function verifyGoogleOAuthToken(token) {
+  try {
+    console.log('Attempting to verify Google OAuth token...');
+    
+    // First try as access token
+    let response = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${token}`);
+    
+    if (!response.ok) {
+      console.log(`Access token verification failed with status: ${response.status}`);
+      
+      // If access token fails, try as ID token
+      response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
+      
+      if (!response.ok) {
+        console.error(`ID token verification also failed with status: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Google OAuth error response:', errorText);
+        return null;
+      }
+    }
+    
+    const userInfo = await response.json();
+    console.log('Google OAuth verification successful, user info:', {
+      sub: userInfo.sub,
+      email: userInfo.email,
+      name: userInfo.name,
+      email_verified: userInfo.email_verified
+    });
+    
+    // Check if the token is valid and has the required fields
+    if (!userInfo.email) {
+      console.error('Google OAuth token missing email field');
+      return null;
+    }
+    
+    // For ID tokens, email_verified might not be present, so we'll be more lenient
+    if (userInfo.email_verified === false) {
+      console.error('Google OAuth token email not verified');
+      return null;
+    }
+    
+    return {
+      sub: userInfo.sub,
+      email: userInfo.email,
+      name: userInfo.name,
+      picture: userInfo.picture,
+      email_verified: userInfo.email_verified !== false
+    };
+  } catch (error) {
+    console.error('Error verifying Google OAuth token:', error);
+    return null;
+  }
+}
 
 // Get user subscription status
 router.get('/status', verifyFirebaseToken, async (req, res) => {
@@ -181,6 +304,83 @@ router.post('/create-checkout-session', verifyFirebaseToken, async (req, res) =>
   } catch (error) {
     console.error('Error creating Stripe checkout session:', error);
     res.status(500).json({ success: false, error: 'Failed to create checkout session' });
+  }
+});
+
+// Get subscription status with permanent session token
+router.post('/status-session', async (req, res) => {
+  try {
+    const { sessionToken } = req.body;
+    
+    if (!sessionToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Session token is required'
+      });
+    }
+    
+    console.log('Getting subscription status with session token');
+    
+    // Verify the session token
+    const jwt = require('jsonwebtoken');
+    let userInfo;
+    
+    try {
+      const decoded = jwt.verify(sessionToken, process.env.JWT_SECRET);
+      
+      if (decoded.type !== 'permanent') {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid session token type'
+        });
+      }
+      
+      userInfo = {
+        userId: decoded.userId,
+        email: decoded.email
+      };
+    } catch (error) {
+      console.error('Session token verification failed:', error);
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid session token'
+      });
+    }
+    
+    const userModel = new UserSupabase();
+    
+    // Get user by ID
+    const user = await userModel.findById(userInfo.userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+    
+    // Get subscription details
+    const userWithSubscription = await userModel.getUserWithSubscription(user.id);
+    
+    // Check if subscription is active
+    const hasActiveSubscription = userWithSubscription?.subscription_status === 'active';
+
+    res.json({
+      success: true,
+      subscription: {
+        status: userWithSubscription?.subscription_status || 'inactive',
+        plan: userWithSubscription?.subscription_plan || null,
+        endDate: userWithSubscription?.subscription_end_date || null,
+        customerId: userWithSubscription?.stripe_customer_id || null
+      },
+      hasActiveSubscription: hasActiveSubscription
+    });
+  } catch (error) {
+    console.error('Error getting subscription status with session:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get subscription status'
+    });
   }
 });
 
