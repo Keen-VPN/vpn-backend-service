@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { getInstance as getSupabaseInstance } from './config/supabase.js';
 import authRoutes from './routes/auth.js';
 import subscriptionRoutes from './routes/subscription.js';
+import connectionRoutes from './routes/connection.js';
 import stripe from './config/stripe.js';
 import UserSupabase from './models/UserSupabase.js';
 
@@ -305,6 +306,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/subscription', subscriptionRoutes);
+app.use('/api/connection', connectionRoutes);
 
 // Health check endpoint
 app.get('/health', async (req, res) => {

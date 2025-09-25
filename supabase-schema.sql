@@ -46,6 +46,45 @@ CREATE TRIGGER update_users_updated_at
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
+-- Create connection_sessions table for tracking VPN connection durations
+CREATE TABLE IF NOT EXISTS public.connection_sessions (
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    session_start TIMESTAMP WITH TIME ZONE NOT NULL,
+    session_end TIMESTAMP WITH TIME ZONE NULL,
+    duration_seconds INTEGER NOT NULL DEFAULT 0,
+    server_location TEXT NULL,
+    server_address TEXT NULL,
+    ip_address TEXT NULL,
+    platform TEXT NOT NULL,
+    app_version TEXT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NULL DEFAULT NOW(),
+    CONSTRAINT connection_sessions_pkey PRIMARY KEY (id),
+    CONSTRAINT connection_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+-- Create indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_connection_sessions_user_id ON public.connection_sessions USING btree (user_id);
+CREATE INDEX IF NOT EXISTS idx_connection_sessions_session_start ON public.connection_sessions USING btree (session_start);
+CREATE INDEX IF NOT EXISTS idx_connection_sessions_session_end ON public.connection_sessions USING btree (session_end);
+CREATE INDEX IF NOT EXISTS idx_connection_sessions_duration ON public.connection_sessions USING btree (duration_seconds);
+CREATE INDEX IF NOT EXISTS idx_connection_sessions_platform ON public.connection_sessions USING btree (platform);
+CREATE INDEX IF NOT EXISTS idx_connection_sessions_created_at ON public.connection_sessions USING btree (created_at);
+
+-- Enable Row Level Security for connection_sessions
+ALTER TABLE public.connection_sessions ENABLE ROW LEVEL SECURITY;
+
+-- Create policy for connection_sessions (allow all operations for now)
+CREATE POLICY "Allow all operations on connection_sessions" ON public.connection_sessions
+    FOR ALL USING (true);
+
+-- Create trigger to automatically update updated_at for connection_sessions
+CREATE TRIGGER update_connection_sessions_updated_at 
+    BEFORE UPDATE ON public.connection_sessions 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
 -- Insert some sample data (optional)
 -- INSERT INTO public.users (firebase_uid, email, display_name, subscription_status) 
 -- VALUES 
