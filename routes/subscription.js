@@ -7,6 +7,7 @@ import stripe from '../config/stripe.js';
 import UserSupabase from '../models/UserSupabase.js';
 import { body, validationResult } from 'express-validator';
 import fetch from 'node-fetch';
+import { verifyPermanentSessionToken } from './auth.js';
 
 const router = express.Router();
 
@@ -95,9 +96,9 @@ router.post('/status-oauth', async (req, res) => {
       success: true,
       subscription: {
         status: userWithSubscription?.subscription_status || 'inactive',
-        plan: userWithSubscription?.subscription_plan || null,
-        endDate: userWithSubscription?.subscription_end_date || null,
-        customerId: userWithSubscription?.stripe_customer_id || null
+        plan: userWithSubscription?.subscription_plan || '',
+        endDate: userWithSubscription?.subscription_end_date || '',
+        customerId: userWithSubscription?.stripe_customer_id || ''
       },
       hasActiveSubscription: hasActiveSubscription
     });
@@ -193,9 +194,9 @@ router.get('/status', verifyFirebaseToken, async (req, res) => {
       success: true,
       subscription: {
         status: userWithSubscription?.subscription_status || 'inactive',
-        plan: userWithSubscription?.subscription_plan || null,
-        endDate: userWithSubscription?.subscription_end_date || null,
-        customerId: userWithSubscription?.stripe_customer_id || null
+        plan: userWithSubscription?.subscription_plan || '',
+        endDate: userWithSubscription?.subscription_end_date || '',
+        customerId: userWithSubscription?.stripe_customer_id || ''
       },
       hasActiveSubscription: hasActiveSubscription
     });
@@ -251,8 +252,80 @@ router.post('/customer-portal', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// Create Stripe Checkout Session (backend-driven, secure)
-router.post('/create-checkout-session', verifyFirebaseToken, async (req, res) => {
+// Create Stripe Checkout Session with session token (for iOS app)
+router.post('/create-checkout-session', async (req, res) => {
+  try {
+    const { sessionToken } = req.body;
+    
+    if (!sessionToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Session token is required'
+      });
+    }
+    
+    // Verify the session token
+    const userInfo = verifyPermanentSessionToken(sessionToken);
+    
+    if (!userInfo) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid session token'
+      });
+    }
+    
+    const userModel = new UserSupabase();
+    
+    // Get user by ID from session token
+    const user = await userModel.findById(userInfo.userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+    
+    if (!user.email) {
+      return res.status(400).json({ success: false, error: 'User email required' });
+    }
+    
+    // Get plan info
+    const planPrice = process.env.PLAN_PRICE || 99.99;
+    const planName = process.env.PLAN_NAME || 'Premium VPN';
+    const stripePriceId = process.env.STRIPE_PRICE_ID; // You must set this in your .env
+    if (!stripePriceId) {
+      return res.status(500).json({ success: false, error: 'Stripe price ID not configured' });
+    }
+    
+    // Create Stripe Checkout Session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'subscription',
+      customer_email: user.email,
+      line_items: [
+        {
+          price: stripePriceId,
+          quantity: 1,
+        },
+      ],
+      success_url: process.env.CHECKOUT_SUCCESS_URL,
+      cancel_url: process.env.CHECKOUT_CANCEL_URL,
+      metadata: {
+        userId: user.id,
+        plan: planName
+      }
+    });
+    
+    res.json({ success: true, url: session.url });
+  } catch (error) {
+    console.error('Error creating Stripe checkout session:', error);
+    res.status(500).json({ success: false, error: 'Failed to create checkout session' });
+  }
+});
+
+// Create Stripe Checkout Session (Firebase token version - for web app)
+router.post('/create-checkout-session-firebase', verifyFirebaseToken, async (req, res) => {
   try {
     const firebaseUid = req.user.uid;
     const userModel = new UserSupabase();
@@ -322,25 +395,9 @@ router.post('/status-session', async (req, res) => {
     console.log('Getting subscription status with session token');
     
     // Verify the session token
-    const jwt = require('jsonwebtoken');
-    let userInfo;
+    const userInfo = verifyPermanentSessionToken(sessionToken);
     
-    try {
-      const decoded = jwt.verify(sessionToken, process.env.JWT_SECRET);
-      
-      if (decoded.type !== 'permanent') {
-        return res.status(401).json({
-          success: false,
-          error: 'Invalid session token type'
-        });
-      }
-      
-      userInfo = {
-        userId: decoded.userId,
-        email: decoded.email
-      };
-    } catch (error) {
-      console.error('Session token verification failed:', error);
+    if (!userInfo) {
       return res.status(401).json({
         success: false,
         error: 'Invalid session token'
@@ -369,9 +426,9 @@ router.post('/status-session', async (req, res) => {
       success: true,
       subscription: {
         status: userWithSubscription?.subscription_status || 'inactive',
-        plan: userWithSubscription?.subscription_plan || null,
-        endDate: userWithSubscription?.subscription_end_date || null,
-        customerId: userWithSubscription?.stripe_customer_id || null
+        plan: userWithSubscription?.subscription_plan || '',
+        endDate: userWithSubscription?.subscription_end_date || '',
+        customerId: userWithSubscription?.stripe_customer_id || ''
       },
       hasActiveSubscription: hasActiveSubscription
     });

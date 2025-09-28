@@ -40,15 +40,15 @@ router.get('/profile', verifyFirebaseToken, async (req, res) => {
         photoURL: req.user.picture,
         isSubscribed: hasActiveSubscription,
         subscriptionStatus: userWithSubscription?.subscription_status || 'inactive',
-        currentPlan: userWithSubscription?.subscription_plan || null,
+        currentPlan: userWithSubscription?.subscription_plan || '',
         createdAt: user.created_at,
         updatedAt: user.updated_at
       },
       subscription: {
         status: userWithSubscription?.subscription_status || 'inactive',
-        plan: userWithSubscription?.subscription_plan || null,
-        endDate: userWithSubscription?.subscription_end_date || null,
-        customerId: userWithSubscription?.stripe_customer_id || null
+        plan: userWithSubscription?.subscription_plan || '',
+        endDate: userWithSubscription?.subscription_end_date || '',
+        customerId: userWithSubscription?.stripe_customer_id || ''
       },
       hasActiveSubscription: hasActiveSubscription
     });
@@ -261,13 +261,13 @@ router.post('/init-oauth', async (req, res) => {
         photoURL: googleUserInfo.picture,
         isSubscribed: hasActiveSubscription,
         subscriptionStatus: userWithSubscription?.subscription_status || 'inactive',
-        currentPlan: userWithSubscription?.subscription_plan || null
+        currentPlan: userWithSubscription?.subscription_plan || ''
       },
       subscription: {
         status: userWithSubscription?.subscription_status || 'inactive',
-        plan: userWithSubscription?.subscription_plan || null,
-        endDate: userWithSubscription?.subscription_end_date || null,
-        customerId: userWithSubscription?.stripe_customer_id || null
+        plan: userWithSubscription?.subscription_plan || '',
+        endDate: userWithSubscription?.subscription_end_date || '',
+        customerId: userWithSubscription?.stripe_customer_id || ''
       },
       hasActiveSubscription: hasActiveSubscription
     });
@@ -368,13 +368,13 @@ router.post('/init', verifyFirebaseToken, async (req, res) => {
         photoURL: req.user.picture,
         isSubscribed: hasActiveSubscription,
         subscriptionStatus: userWithSubscription?.subscription_status || 'inactive',
-        currentPlan: userWithSubscription?.subscription_plan || null
+        currentPlan: userWithSubscription?.subscription_plan || ''
       },
       subscription: {
         status: userWithSubscription?.subscription_status || 'inactive',
-        plan: userWithSubscription?.subscription_plan || null,
-        endDate: userWithSubscription?.subscription_end_date || null,
-        customerId: userWithSubscription?.stripe_customer_id || null
+        plan: userWithSubscription?.subscription_plan || '',
+        endDate: userWithSubscription?.subscription_end_date || '',
+        customerId: userWithSubscription?.stripe_customer_id || ''
       },
       hasActiveSubscription: hasActiveSubscription
     });
@@ -453,9 +453,9 @@ router.post('/auth-permanent', async (req, res) => {
           hasActiveSubscription: hasActiveSubscription,
           subscription: {
             status: userWithSubscription?.subscription_status || 'inactive',
-            plan: userWithSubscription?.subscription_plan || null,
-            endDate: userWithSubscription?.subscription_end_date || null,
-            customerId: userWithSubscription?.stripe_customer_id || null
+            plan: userWithSubscription?.subscription_plan || '',
+            endDate: userWithSubscription?.subscription_end_date || '',
+            customerId: userWithSubscription?.stripe_customer_id || ''
           },
           sessionToken: sessionToken
         });
@@ -496,9 +496,9 @@ router.post('/auth-permanent', async (req, res) => {
               hasActiveSubscription: hasActiveSubscription,
               subscription: {
                 status: userWithSubscription?.subscription_status || 'inactive',
-                plan: userWithSubscription?.subscription_plan || null,
-                endDate: userWithSubscription?.subscription_end_date || null,
-                customerId: userWithSubscription?.stripe_customer_id || null
+                plan: userWithSubscription?.subscription_plan || '',
+                endDate: userWithSubscription?.subscription_end_date || '',
+                customerId: userWithSubscription?.stripe_customer_id || ''
               },
               sessionToken: token, // Return the same token
               authMethod: 'session'
@@ -625,13 +625,13 @@ router.post('/auth-permanent', async (req, res) => {
         photoURL: null, // Not needed for permanent sessions
         isSubscribed: hasActiveSubscription,
         subscriptionStatus: userWithSubscription?.subscription_status || 'inactive',
-        currentPlan: userWithSubscription?.subscription_plan || null
+        currentPlan: userWithSubscription?.subscription_plan || ''
       },
       subscription: {
         status: userWithSubscription?.subscription_status || 'inactive',
-        plan: userWithSubscription?.subscription_plan || null,
-        endDate: userWithSubscription?.subscription_end_date || null,
-        customerId: userWithSubscription?.stripe_customer_id || null
+        plan: userWithSubscription?.subscription_plan || '',
+        endDate: userWithSubscription?.subscription_end_date || '',
+        customerId: userWithSubscription?.stripe_customer_id || ''
       },
       hasActiveSubscription: hasActiveSubscription,
       sessionToken: sessionToken,
@@ -692,13 +692,13 @@ router.post('/verify-session', async (req, res) => {
         photoURL: null,
         isSubscribed: hasActiveSubscription,
         subscriptionStatus: userWithSubscription?.subscription_status || 'inactive',
-        currentPlan: userWithSubscription?.subscription_plan || null
+        currentPlan: userWithSubscription?.subscription_plan || ''
       },
       subscription: {
         status: userWithSubscription?.subscription_status || 'inactive',
-        plan: userWithSubscription?.subscription_plan || null,
-        endDate: userWithSubscription?.subscription_end_date || null,
-        customerId: userWithSubscription?.stripe_customer_id || null
+        plan: userWithSubscription?.subscription_plan || '',
+        endDate: userWithSubscription?.subscription_end_date || '',
+        customerId: userWithSubscription?.stripe_customer_id || ''
       },
       hasActiveSubscription: hasActiveSubscription
     });
@@ -727,22 +727,40 @@ function generatePermanentSessionToken(userId, email) {
 // Helper function to verify permanent session token
 function verifyPermanentSessionToken(token) {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // First try to decode without verification to check the algorithm
+    const decodedHeader = jwt.decode(token, { complete: true });
     
-    if (decoded.type !== 'permanent') {
+    if (!decodedHeader || !decodedHeader.header) {
+      console.log('Invalid JWT token format');
       return null;
     }
     
-    return {
-      userId: decoded.userId,
-      email: decoded.email,
-      createdAt: decoded.createdAt
-    };
+    // Check if this is our own JWT token (should be HS256)
+    if (decodedHeader.header.alg === 'HS256') {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+      
+      if (decoded.type !== 'permanent') {
+        return null;
+      }
+      
+      return {
+        userId: decoded.userId,
+        email: decoded.email,
+        createdAt: decoded.createdAt
+      };
+    } else {
+      // This is not our JWT token, likely a Google OAuth token
+      console.log('Token is not our JWT token (algorithm:', decodedHeader.header.alg, ')');
+      return null;
+    }
   } catch (error) {
     console.error('Error verifying session token:', error);
     return null;
   }
 }
+
+// Export the helper function for use in other routes
+export { verifyPermanentSessionToken };
 
 // Delete account (complete account deletion) - OAuth token based
 router.delete('/delete-account', async (req, res) => {

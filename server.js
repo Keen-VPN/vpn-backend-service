@@ -181,7 +181,6 @@ async function handleSubscriptionCreated(subscription) {
     // Update user subscription status
     await userSupabase.updateSubscriptionStatus(user.id, {
       customerId: customerId,
-      status: status,
       plan: 'premium',
       endDate: newEndDate
     });
