@@ -341,9 +341,11 @@ async function verifyGoogleOAuthToken(token) {
     const userInfo = await response.json();
     console.log('Google OAuth verification successful, user info:', {
       id: userInfo.id,
+      sub: userInfo.sub,
       email: userInfo.email,
       name: userInfo.name,
-      verified_email: userInfo.verified_email
+      verified_email: userInfo.verified_email,
+      full_response: userInfo
     });
     
     // Check if the token is valid and has the required fields
@@ -358,12 +360,19 @@ async function verifyGoogleOAuthToken(token) {
       return null;
     }
     
+    // Ensure we have a valid sub (user ID) for Firebase UID
+    const sub = userInfo.sub || userInfo.id;
+    if (!sub) {
+      console.error('Google OAuth response missing both sub and id fields');
+      return null;
+    }
+    
     return {
-      sub: userInfo.id, // userinfo endpoint uses 'id' instead of 'sub'
+      sub: sub, // Handle both userinfo (id) and tokeninfo (sub) endpoints
       email: userInfo.email,
       name: userInfo.name,
       picture: userInfo.picture,
-      email_verified: userInfo.verified_email !== false
+      email_verified: userInfo.verified_email !== false || userInfo.email_verified !== false
     };
   } catch (error) {
     console.error('Error verifying Google OAuth token:', error);
@@ -999,7 +1008,7 @@ router.delete('/delete-account', async (req, res) => {
 });
 
 // Delete account with session token (for permanent authentication users)
-router.delete('/delete-account-session', async (req, res) => {
+router.post('/delete-account-session', async (req, res) => {
   try {
     const { sessionToken } = req.body;
     
