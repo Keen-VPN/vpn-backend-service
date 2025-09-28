@@ -289,9 +289,11 @@ async function verifyGoogleOAuthToken(token) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
     
+    let response;
+    
     try {
       // First try as access token
-      let response = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${token}`, {
+      response = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${token}`, {
         signal: controller.signal
       });
       
