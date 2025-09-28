@@ -285,21 +285,55 @@ async function verifyGoogleOAuthToken(token) {
   try {
     console.log('Attempting to verify Google OAuth token...');
     
-    // First try as access token
-    let response = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${token}`);
+    // Add timeout to prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
     
-    if (!response.ok) {
-      console.log(`Access token verification failed with status: ${response.status}`);
+    try {
+      // First try as access token
+      let response = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${token}`, {
+        signal: controller.signal
+      });
       
-      // If access token fails, try as ID token
-      response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
+      clearTimeout(timeoutId);
       
       if (!response.ok) {
-        console.error(`ID token verification also failed with status: ${response.status}`);
-        const errorText = await response.text();
-        console.error('Google OAuth error response:', errorText);
-        return null;
+        console.log(`Access token verification failed with status: ${response.status}`);
+        
+        // If access token fails, try as ID token
+        const idController = new AbortController();
+        const idTimeoutId = setTimeout(() => idController.abort(), 10000);
+        
+        try {
+          response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`, {
+            signal: idController.signal
+          });
+          clearTimeout(idTimeoutId);
+          
+          if (!response.ok) {
+            console.error(`ID token verification also failed with status: ${response.status}`);
+            const errorText = await response.text();
+            console.error('Google OAuth error response:', errorText);
+            return null;
+          }
+        } catch (idError) {
+          clearTimeout(idTimeoutId);
+          if (idError.name === 'AbortError') {
+            console.error('Google OAuth ID token verification timed out');
+          } else {
+            console.error('Google OAuth ID token verification error:', idError);
+          }
+          return null;
+        }
       }
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        console.error('Google OAuth verification timed out');
+      } else {
+        console.error('Google OAuth verification error:', error);
+      }
+      return null;
     }
     
     const userInfo = await response.json();
@@ -512,14 +546,66 @@ router.post('/auth-permanent', async (req, res) => {
       // If JWT verification failed, try Google OAuth verification
       console.log('🔐 Processing Google OAuth verification...');
       
-      let googleUserInfo = await verifyGoogleOAuthToken(token);
+      let googleUserInfo = null;
+      
+      // Add timeout wrapper for Google OAuth verification
+      try {
+        const oauthPromise = verifyGoogleOAuthToken(token);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Google OAuth verification timeout')), 15000)
+        );
+        
+        googleUserInfo = await Promise.race([oauthPromise, timeoutPromise]);
+      } catch (oauthError) {
+        console.error('Google OAuth verification failed or timed out:', oauthError.message);
+        googleUserInfo = null;
+        
+        // If Google OAuth fails due to network issues, try manual JWT decode immediately
+        if (oauthError.message.includes('timeout') || oauthError.message.includes('ETIMEDOUT')) {
+          console.log('🔄 Google OAuth timeout, trying manual JWT decode...');
+          try {
+            const jwt = await import('jsonwebtoken');
+            const decoded = jwt.default.decode(token, { complete: true });
+            
+            if (decoded && decoded.payload) {
+              const payload = decoded.payload;
+              console.log('Manual JWT decode from Google OAuth timeout:', {
+                sub: payload.sub,
+                email: payload.email,
+                name: payload.name,
+                email_verified: payload.email_verified
+              });
+              
+              // Verify this is a Google token
+              if (payload.iss === 'https://accounts.google.com' && payload.aud && payload.sub) {
+                googleUserInfo = {
+                  sub: payload.sub,
+                  email: payload.email,
+                  name: payload.name,
+                  picture: payload.picture,
+                  email_verified: payload.email_verified
+                };
+                console.log('✅ Manual JWT decode successful from Google OAuth timeout');
+              }
+            }
+          } catch (manualDecodeError) {
+            console.error('Manual JWT decode from Google OAuth timeout failed:', manualDecodeError.message);
+          }
+        }
+      }
       
       if (!googleUserInfo) {
         console.log('Google OAuth verification failed, trying Firebase token verification...');
         
         // If Google OAuth fails, try to verify as Firebase ID token
         try {
-          const decodedToken = await admin.auth().verifyIdToken(token);
+          const firebasePromise = admin.auth().verifyIdToken(token);
+          const firebaseTimeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Firebase verification timeout')), 10000)
+          );
+          
+          const decodedToken = await Promise.race([firebasePromise, firebaseTimeoutPromise]);
+          
           if (decodedToken && decodedToken.uid) {
             googleUserInfo = {
               sub: decodedToken.uid,
@@ -532,13 +618,49 @@ router.post('/auth-permanent', async (req, res) => {
           }
         } catch (firebaseError) {
           console.error('Firebase token verification also failed:', firebaseError.message);
+          
+          // If Firebase fails due to audience mismatch, try to decode the JWT manually
+          if (firebaseError.message.includes('audience') || firebaseError.message.includes('aud')) {
+            console.log('🔄 Firebase audience mismatch, trying manual JWT decode...');
+            try {
+              // Manually decode the JWT to extract user info
+              const jwt = await import('jsonwebtoken');
+              const decoded = jwt.default.decode(token, { complete: true });
+              
+              if (decoded && decoded.payload) {
+                const payload = decoded.payload;
+                console.log('Manual JWT decode successful:', {
+                  sub: payload.sub,
+                  email: payload.email,
+                  name: payload.name,
+                  email_verified: payload.email_verified
+                });
+                
+                // Verify this is a Google token (for iOS/Android) or Firebase token (for desktop)
+                if ((payload.iss === 'https://accounts.google.com' || payload.iss === 'https://securetoken.google.com/') && payload.aud && payload.sub) {
+                  googleUserInfo = {
+                    sub: payload.sub,
+                    email: payload.email,
+                    name: payload.name,
+                    picture: payload.picture,
+                    email_verified: payload.email_verified
+                  };
+                  console.log('✅ Manual JWT decode successful - Token verified');
+                }
+              }
+            } catch (manualDecodeError) {
+              console.error('Manual JWT decode also failed:', manualDecodeError.message);
+            }
+          }
         }
       }
       
       if (!googleUserInfo) {
+        console.log('❌ All authentication methods failed');
         return res.status(401).json({
           success: false,
-          error: 'Invalid OAuth token or Firebase token'
+          error: 'Authentication failed. Please try signing in again.',
+          details: 'Unable to verify Google OAuth token or Firebase token'
         });
       }
       

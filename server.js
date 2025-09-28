@@ -107,6 +107,10 @@ app.post('/api/subscription/webhook', async (req, res) => {
           await handlePaymentFailed(event.data.object);
           break;
 
+        case 'invoice_payment.paid':
+          await handleInvoicePaymentPaid(event.data.object);
+          break;
+
         default:
           console.log(`Unhandled event type: ${event.type}`);
       }
@@ -296,6 +300,69 @@ async function handlePaymentSucceeded(invoice) {
 
 async function handlePaymentFailed(invoice) {
   console.log('Payment failed for invoice:', invoice.id);
+}
+
+async function handleInvoicePaymentPaid(invoicePayment) {
+  try {
+    console.log(`💰 Invoice payment paid: ${invoicePayment.id}`);
+    
+    // Get the invoice details to find the customer
+    const invoice = await stripe.invoices.retrieve(invoicePayment.invoice);
+    const customerId = invoice.customer;
+    
+    console.log(`🔄 Processing invoice payment for customer: ${customerId}`);
+    
+    // Find user by Stripe customer ID
+    const userSupabase = new UserSupabase();
+    const user = await userSupabase.findByStripeCustomerId(customerId);
+    
+    if (!user) {
+      console.error('❌ User not found for customer ID:', customerId);
+      return;
+    }
+    
+    console.log(`👤 Found user: ${user.firebase_uid}`);
+    
+    // If this is a subscription invoice, activate the subscription
+    if (invoice.subscription) {
+      console.log(`📋 This payment is for subscription: ${invoice.subscription}`);
+      
+      // Get the subscription details
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      const status = subscription.status;
+      const endDate = new Date(subscription.current_period_end * 1000).toISOString();
+      
+      console.log(`📊 Subscription status: ${status}, end date: ${endDate}`);
+      
+      // Check if subscription update should be allowed
+      const shouldAllow = await userSupabase.shouldAllowSubscriptionUpdate(user.id, status, endDate);
+      
+      if (!shouldAllow) {
+        console.log(`⏭️ Skipping subscription activation for user ${user.firebase_uid} - update not allowed`);
+        return;
+      }
+      
+      // Activate the subscription
+      if (status === 'active') {
+        console.log(`🎉 Payment confirmed! Activating subscription for user ${user.firebase_uid}`);
+        
+        await userSupabase.updateSubscriptionStatus(user.id, {
+          customerId: customerId,
+          status: 'active',
+          plan: 'premium',
+          endDate: endDate
+        });
+        
+        console.log('✅ Subscription activated successfully after invoice payment');
+      }
+    } else {
+      console.log('📄 This is a one-time payment, not a subscription');
+    }
+    
+  } catch (error) {
+    console.error('❌ Error processing invoice payment paid:', error);
+    throw error;
+  }
 }
 
 // Body parsing middleware (for all other routes)
