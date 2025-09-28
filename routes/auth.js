@@ -292,8 +292,8 @@ async function verifyGoogleOAuthToken(token) {
     let response;
     
     try {
-      // First try as access token
-      response = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${token}`, {
+      // First try as access token using the modern endpoint
+      response = await fetch(`https://www.googleapis.com/oauth2/v2/userinfo?access_token=${token}`, {
         signal: controller.signal
       });
       
@@ -340,10 +340,10 @@ async function verifyGoogleOAuthToken(token) {
     
     const userInfo = await response.json();
     console.log('Google OAuth verification successful, user info:', {
-      sub: userInfo.sub,
+      id: userInfo.id,
       email: userInfo.email,
       name: userInfo.name,
-      email_verified: userInfo.email_verified
+      verified_email: userInfo.verified_email
     });
     
     // Check if the token is valid and has the required fields
@@ -352,18 +352,18 @@ async function verifyGoogleOAuthToken(token) {
       return null;
     }
     
-    // For ID tokens, email_verified might not be present, so we'll be more lenient
-    if (userInfo.email_verified === false) {
+    // For userinfo endpoint, verified_email is the field name
+    if (userInfo.verified_email === false) {
       console.error('Google OAuth token email not verified');
       return null;
     }
     
     return {
-      sub: userInfo.sub,
+      sub: userInfo.id, // userinfo endpoint uses 'id' instead of 'sub'
       email: userInfo.email,
       name: userInfo.name,
       picture: userInfo.picture,
-      email_verified: userInfo.email_verified !== false
+      email_verified: userInfo.verified_email !== false
     };
   } catch (error) {
     console.error('Error verifying Google OAuth token:', error);
