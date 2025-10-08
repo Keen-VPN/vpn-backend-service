@@ -453,13 +453,13 @@ router.post('/auth-permanent', async (req, res) => {
         console.log('🤖 Demo token detected - auto-authenticating demo user');
         
         // Find or create demo user
-        let demoUser = await userModel.findByEmail('demo@keenvpn.com');
+        let demoUser = await userModel.findByEmail('demo@vpnkeen.com');
         
         if (!demoUser) {
           console.log('👤 Demo user not found, creating...');
           demoUser = await userModel.createUser({
             firebase_uid: `demo_${Date.now()}`,
-            email: 'demo@keenvpn.com',
+            email: 'demo@vpnkeen.com',
             display_name: 'Demo User'
           });
           
