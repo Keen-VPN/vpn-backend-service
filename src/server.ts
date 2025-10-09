@@ -494,5 +494,11 @@ process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) =>
   process.exit(1);
 });
 
-startServer();
+// Export app for serverless deployment (Netlify Functions)
+export { app };
+
+// Only start server if not in serverless environment
+if (process.env.NETLIFY !== 'true') {
+  startServer();
+}
 
