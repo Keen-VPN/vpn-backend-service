@@ -112,17 +112,15 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
 
     res.status(200).json({
       success: true,
-      data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          displayName: user.displayName,
-          provider: user.provider,
-          emailVerified: user.emailVerified
-        },
-        sessionToken,
-        firebaseUid
-      }
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.displayName,  // Changed from displayName to name
+        provider: user.provider
+      },
+      sessionToken,
+      authMethod: 'apple',
+      subscription: null
     } as ApiResponse);
 
   } catch (error) {
