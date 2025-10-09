@@ -32,6 +32,10 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
     try {
       // Verify the identity token with Firebase
       // Firebase Admin SDK can verify Apple tokens
+      console.log('🔍 Attempting to verify Apple identity token with Firebase...');
+      console.log('🔍 Token length:', identityToken.length);
+      console.log('🔍 Token preview:', identityToken.substring(0, 50) + '...');
+      
       const decodedToken = await admin.auth().verifyIdToken(identityToken);
       firebaseUid = decodedToken.uid;
       emailVerified = decodedToken.email_verified || false;
@@ -39,6 +43,11 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
       console.log('✅ Apple token verified with Firebase:', { firebaseUid, emailVerified });
     } catch (error) {
       console.error('❌ Failed to verify Apple identity token:', error);
+      console.error('❌ Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        code: (error as any)?.code,
+        stack: error instanceof Error ? error.stack : undefined
+      });
       res.status(401).json({
         success: false,
         error: 'Invalid Apple identity token'
