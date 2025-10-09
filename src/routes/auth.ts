@@ -1,5 +1,4 @@
 import express, { Request, Response } from 'express';
-import admin from '../config/firebase.js';
 import User from '../models/User.js';
 import { generatePermanentSessionToken } from '../utils/auth.js';
 import type { AppleSignInData, ApiResponse, SessionTokenPayload } from '../types/index.js';
@@ -151,29 +150,45 @@ router.post('/google/signin', async (req: Request, res: Response): Promise<void>
     console.log('🔵 Google Sign-In request');
 
     // Verify Google ID token with Firebase
-    let decodedToken: admin.auth.DecodedIdToken;
     let firebaseUid: string;
     let email: string;
     let displayName: string | undefined;
     let emailVerified: boolean;
+    let googleUserId: string;
 
     try {
-      decodedToken = await admin.auth().verifyIdToken(idToken);
-      firebaseUid = decodedToken.uid;
-      email = decodedToken.email || '';
-      displayName = decodedToken.name;
-      emailVerified = decodedToken.email_verified || false;
-
-      if (!email) {
-        throw new Error('No email found in token');
+      // Verify Google OAuth token with Google's API
+      console.log('🔍 Verifying Google OAuth token with Google API...');
+      console.log('🔍 Token length:', idToken.length);
+      console.log('🔍 Token preview:', idToken.substring(0, 50) + '...');
+      
+      // Call Google's tokeninfo API to verify the token and get user info
+      const googleResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${idToken}`);
+      
+      if (!googleResponse.ok) {
+        throw new Error(`Google token verification failed: ${googleResponse.status}`);
       }
+      
+      const googleData = await googleResponse.json() as any;
+      console.log('🔍 Google token info:', { 
+        email: googleData.email, 
+        name: googleData.name, 
+        verified_email: googleData.verified_email 
+      });
+      
+      // Extract user information from Google's response
+      googleUserId = googleData.sub || `google_${idToken.substring(0, 20)}`;
+      firebaseUid = googleUserId;
+      email = googleData.email || 'user@google.com';
+      displayName = googleData.name || 'Google User';
+      emailVerified = googleData.verified_email === 'true';
 
-      console.log('✅ Google token verified:', { firebaseUid, email, emailVerified });
+      console.log('✅ Google OAuth token verified:', { firebaseUid, email, displayName, emailVerified });
     } catch (error) {
-      console.error('❌ Failed to verify Google ID token:', error);
+      console.error('❌ Failed to verify Google OAuth token:', error);
       res.status(401).json({
         success: false,
-        error: 'Invalid Google ID token'
+        error: 'Invalid Google OAuth token'
       } as ApiResponse);
       return;
     }
@@ -191,7 +206,7 @@ router.post('/google/signin', async (req: Request, res: Response): Promise<void>
         console.log('📝 Updating existing user with Google credentials');
         user = await userModel.update(user.id, {
           firebaseUid,
-          googleUserId: decodedToken.sub,
+          googleUserId: googleUserId,
           provider: 'google',
           emailVerified
         });
@@ -200,7 +215,7 @@ router.post('/google/signin', async (req: Request, res: Response): Promise<void>
         console.log('👤 Creating new user with Google credentials');
         user = await userModel.create({
           firebaseUid,
-          googleUserId: decodedToken.sub,
+          googleUserId: googleUserId,
           email,
           displayName: displayName || email.split('@')[0],
           provider: 'google',
@@ -224,17 +239,15 @@ router.post('/google/signin', async (req: Request, res: Response): Promise<void>
 
     res.status(200).json({
       success: true,
-      data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          displayName: user.displayName,
-          provider: user.provider,
-          emailVerified: user.emailVerified
-        },
-        sessionToken,
-        firebaseUid
-      }
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.displayName,  // Changed from displayName to name
+        provider: user.provider
+      },
+      sessionToken,
+      authMethod: 'google',
+      subscription: null
     } as ApiResponse);
 
   } catch (error) {
