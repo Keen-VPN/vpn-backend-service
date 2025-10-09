@@ -179,9 +179,10 @@ router.post('/cancel', async (req: Request, res: Response): Promise<void> => {
 
     res.json({
       success: true,
-      message: 'Subscription cancelled successfully. You will have access until the end of your billing period.',
+      message: 'Subscription auto-renewal cancelled. You will have access until the end of your billing period.',
       subscription: {
-        status: 'cancelled',
+        status: 'active',  // Still active until period end
+        cancelAtPeriodEnd: true,
         endDate: cancelledSubscription.currentPeriodEnd
       }
     } as ApiResponse);

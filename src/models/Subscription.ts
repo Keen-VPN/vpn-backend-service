@@ -168,12 +168,12 @@ class Subscription {
         where: { id: subscriptionId },
         data: {
           cancelAtPeriodEnd: true,
-          cancelledAt: new Date(),
-          status: 'cancelled'
+          cancelledAt: new Date()
+          // Keep status as 'active' - subscription remains active until period end
         }
       });
 
-      console.log('✅ Subscription cancelled successfully:', subscription.id);
+      console.log('✅ Subscription marked for cancellation at period end:', subscription.id);
       return subscription;
     } catch (error) {
       console.error('❌ Failed to cancel subscription:', error);
