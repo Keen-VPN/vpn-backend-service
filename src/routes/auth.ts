@@ -78,8 +78,9 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
         const displayName = fullName || (email && email.trim() !== '' ? email.split('@')[0] : `Apple User ${userIdentifier.substring(0, 8)}`);
         
         // Apple Sign-In may not provide email on subsequent sign-ins
-        // Use a fallback email based on the user identifier
-        const userEmail = email && email.trim() !== '' ? email : `${userIdentifier}@privaterelay.appleid.com`;
+        // Use a fallback email based on a shortened user identifier
+        const shortId = userIdentifier.substring(0, 10);
+        const userEmail = email && email.trim() !== '' ? email : `${shortId}@privaterelay.appleid.com`;
         
         user = await userModel.create({
           firebaseUid,
@@ -301,15 +302,13 @@ router.post('/verify', async (req: Request, res: Response): Promise<void> => {
 
     res.status(200).json({
       success: true,
-      data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          displayName: user.displayName,
-          provider: user.provider,
-          emailVerified: user.emailVerified
-        }
-      }
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.displayName,  // Changed from displayName to name
+        provider: user.provider
+      },
+      subscription: null  // Session verification doesn't include subscription
     } as ApiResponse);
 
   } catch (error) {
@@ -317,6 +316,65 @@ router.post('/verify', async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({
       success: false,
       error: 'Failed to verify session token'
+    } as ApiResponse);
+  }
+});
+
+/**
+ * Delete Account
+ * Permanently deletes user account and all associated data
+ */
+router.delete('/delete-account', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, userId } = req.body;
+
+    // Validate required fields
+    if (!email || !userId) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing required fields: email, userId'
+      } as ApiResponse);
+      return;
+    }
+
+    console.log('🗑️ Account deletion request:', { email, userId });
+
+    // Find and delete the user
+    const userModel = new User();
+    const user = await userModel.findById(userId);
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        error: 'User not found'
+      } as ApiResponse);
+      return;
+    }
+
+    // Verify the email matches (additional security check)
+    if (user.email !== email) {
+      res.status(400).json({
+        success: false,
+        error: 'Email does not match user account'
+      } as ApiResponse);
+      return;
+    }
+
+    // Delete the user (this will cascade delete subscriptions and sessions due to foreign key constraints)
+    await userModel.delete(userId);
+
+    console.log('✅ Account deletion successful for user:', userId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Account deleted successfully'
+    } as ApiResponse);
+
+  } catch (error) {
+    console.error('❌ Account deletion error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete account'
     } as ApiResponse);
   }
 });
