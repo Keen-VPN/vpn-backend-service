@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import admin from 'firebase-admin';
+import admin from '../config/firebase.js';
 import User from '../models/User.js';
 import { generatePermanentSessionToken } from '../utils/auth.js';
 import type { AppleSignInData, ApiResponse, SessionTokenPayload } from '../types/index.js';

@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.js';
 import subscriptionRoutes from './routes/subscription.js';
 import connectionRoutes from './routes/connection.js';
 import stripe from './config/stripe.js';
+import './config/firebase.js'; // Initialize Firebase
 import User from './models/User.js';
 import Subscription from './models/Subscription.js';
 import type Stripe from 'stripe';
