@@ -15,10 +15,10 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
     const { identityToken, userIdentifier, email, fullName } = req.body as AppleSignInData;
 
     // Validate required fields
-    if (!identityToken || !userIdentifier || !email) {
+    if (!identityToken || !userIdentifier) {
       res.status(400).json({
         success: false,
-        error: 'Missing required fields: identityToken, userIdentifier, email'
+        error: 'Missing required fields: identityToken, userIdentifier'
       } as ApiResponse);
       return;
     }
@@ -51,8 +51,10 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
     let user = await userModel.findByAppleUserId(userIdentifier);
 
     if (!user) {
-      // Try to find by email (in case user signed in with different method before)
-      user = await userModel.findByEmail(email);
+      // Try to find by email only if email is provided (in case user signed in with different method before)
+      if (email && email.trim() !== '') {
+        user = await userModel.findByEmail(email);
+      }
       
       if (user) {
         // Update existing user with Apple credentials
@@ -66,11 +68,17 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
       } else {
         // Create new user
         console.log('👤 Creating new user with Apple credentials');
+        const displayName = fullName || (email && email.trim() !== '' ? email.split('@')[0] : `Apple User ${userIdentifier.substring(0, 8)}`);
+        
+        // Apple Sign-In may not provide email on subsequent sign-ins
+        // Use a fallback email based on the user identifier
+        const userEmail = email && email.trim() !== '' ? email : `${userIdentifier}@privaterelay.appleid.com`;
+        
         user = await userModel.create({
           firebaseUid,
           appleUserId: userIdentifier,
-          email,
-          displayName: fullName || email.split('@')[0],
+          email: userEmail,
+          displayName,
           provider: 'apple',
           emailVerified
         });
