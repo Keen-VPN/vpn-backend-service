@@ -1,0 +1,123 @@
+// Prisma Schema for KeenVPN Backend
+// This file defines your database schema for Prisma ORM
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================
+// USER MODEL
+// ========================================
+model User {
+  id            String   @id @default(uuid())
+  firebaseUid   String?  @unique @map("firebase_uid")
+  appleUserId   String?  @unique @map("apple_user_id")
+  googleUserId  String?  @unique @map("google_user_id")
+  email         String   @unique
+  displayName   String?  @map("display_name")
+  provider      String   @default("google")
+  emailVerified Boolean  @default(false) @map("email_verified")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  subscriptions      Subscription[]
+  connectionSessions ConnectionSession[]
+
+  @@map("users")
+}
+
+// ========================================
+// SUBSCRIPTION MODEL
+// ========================================
+model Subscription {
+  id                   String    @id @default(uuid())
+  userId               String    @map("user_id")
+  stripeCustomerId     String?   @map("stripe_customer_id")
+  stripeSubscriptionId String?   @unique @map("stripe_subscription_id")
+  status               String    @default("inactive") // 'active', 'inactive', 'cancelled', 'past_due', 'trialing'
+  planId               String?   @map("plan_id")
+  planName             String?   @map("plan_name")
+  priceAmount          Decimal?  @map("price_amount") @db.Decimal(10, 2)
+  priceCurrency        String?   @default("USD") @map("price_currency")
+  billingPeriod        String?   @map("billing_period") // 'year', 'month'
+  currentPeriodStart   DateTime? @map("current_period_start")
+  currentPeriodEnd     DateTime? @map("current_period_end")
+  cancelAtPeriodEnd    Boolean   @default(false) @map("cancel_at_period_end")
+  cancelledAt          DateTime? @map("cancelled_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([stripeCustomerId])
+  @@index([status])
+  @@index([currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+// ========================================
+// CONNECTION SESSION MODEL
+// ========================================
+model ConnectionSession {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  sessionStart     DateTime  @map("session_start")
+  sessionEnd       DateTime? @map("session_end")
+  durationSeconds  Int       @default(0) @map("duration_seconds")
+  serverLocation   String?   @map("server_location") // 'US', 'Nigeria', etc.
+  serverAddress    String?   @map("server_address") // IP address of VPN server (for troubleshooting only)
+  platform         String // 'macOS', 'iOS', 'Android', 'Web'
+  appVersion       String?   @map("app_version")
+  bytesTransferred BigInt    @default(0) @map("bytes_transferred")
+  subscriptionTier String?   @map("subscription_tier") // 'free', 'basic', 'premium'
+  isAnonymized     Boolean   @default(false) @map("is_anonymized") // Privacy flag
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionStart])
+  @@index([sessionEnd])
+  @@index([durationSeconds])
+  @@index([platform])
+  @@index([serverLocation])
+  @@index([createdAt])
+  @@index([isAnonymized])
+  @@index([subscriptionTier])
+  @@map("connection_sessions")
+}
+
+// Aggregated analytics table - fully anonymized, GDPR-compliant
+model SessionAggregate {
+  id              String   @id @default(uuid())
+  aggregationDate DateTime @map("aggregation_date") // Date for this aggregate
+  platform        String // 'iOS', 'macOS', 'Android', 'Web'
+  serverLocation  String   @map("server_location") // 'US', 'Nigeria', etc.
+  subscriptionTier String?  @map("subscription_tier") // 'free', 'basic', 'premium'
+  totalSessions   Int      @map("total_sessions")
+  totalDuration   Int      @map("total_duration") // seconds
+  totalBytes      BigInt   @map("total_bytes")
+  avgDuration     Int      @map("avg_duration") // seconds
+  avgBytes        BigInt   @map("avg_bytes")
+  uniqueUsers     Int      @map("unique_users") // count only, no identifiers
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([aggregationDate, platform, serverLocation, subscriptionTier])
+  @@index([aggregationDate])
+  @@index([platform])
+  @@index([serverLocation])
+  @@index([subscriptionTier])
+  @@map("session_aggregates")
+}
+
