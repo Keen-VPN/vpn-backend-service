@@ -54,9 +54,27 @@ const limiter = rateLimit({
   max: 100, // limit each IP to 100 requests per windowMs
   message: {
     error: 'Too many requests from this IP, please try again later.'
+  },
+  // Configure for serverless environments (Netlify Functions)
+  keyGenerator: (req): string => {
+    // Use X-Forwarded-For header in serverless environments
+    const forwarded = req.headers['x-forwarded-for'];
+    if (forwarded) {
+      const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0];
+      return ip || 'unknown';
+    }
+    return req.ip || 'unknown';
+  },
+  skip: (req) => {
+    // Skip rate limiting in development or if no IP can be determined
+    return process.env.NODE_ENV === 'development' || !req.ip;
   }
 });
-app.use('/api/', limiter);
+
+// Only apply rate limiting in non-serverless environments
+if (process.env.NETLIFY !== 'true') {
+  app.use('/api/', limiter);
+}
 
 // Webhook route needs raw body - must come BEFORE JSON parsing
 app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
