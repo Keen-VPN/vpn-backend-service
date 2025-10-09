@@ -300,6 +300,20 @@ router.post('/verify', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Get user's subscription data
+    const { default: Subscription } = await import('../models/Subscription.js');
+    const subscriptionModel = new Subscription();
+    const activeSubscription = await subscriptionModel.findActiveByUserId(user.id);
+
+    let subscriptionData = null;
+    if (activeSubscription) {
+      subscriptionData = {
+        status: activeSubscription.status,
+        endDate: activeSubscription.currentPeriodEnd?.toISOString(),
+        cancelAtPeriodEnd: activeSubscription.cancelAtPeriodEnd
+      };
+    }
+
     res.status(200).json({
       success: true,
       user: {
@@ -308,7 +322,7 @@ router.post('/verify', async (req: Request, res: Response): Promise<void> => {
         name: user.displayName,  // Changed from displayName to name
         provider: user.provider
       },
-      subscription: null  // Session verification doesn't include subscription
+      subscription: subscriptionData
     } as ApiResponse);
 
   } catch (error) {
