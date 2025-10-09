@@ -7,6 +7,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import authRoutes from './routes/auth.js';
 import subscriptionRoutes from './routes/subscription.js';
 import connectionRoutes from './routes/connection.js';
 import stripe from './config/stripe.js';
@@ -288,6 +289,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // API routes
+app.use('/api/auth', authRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/connection', connectionRoutes);
 
