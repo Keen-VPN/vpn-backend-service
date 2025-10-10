@@ -7,6 +7,10 @@ import type { ApiResponse } from '../types/index.js';
 
 const router = express.Router();
 
+const PRICE_ID = process.env.STRIPE_PRICE_ID || 'price_1Rf5jFJ63Mu2b1BhLuEaYEB7';
+const SUCCESS_URL = process.env.CHECKOUT_SUCCESS_URL || 'https://vpnkeen.com/success';
+const CANCEL_URL = process.env.CHECKOUT_CANCEL_URL || 'https://vpnkeen.com/cancel';
+
 // Get available subscription plans
 router.get('/plans', async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -280,6 +284,107 @@ router.post('/create-checkout-session', async (req: Request, res: Response): Pro
     res.status(500).json({ 
       success: false, 
       error: 'Failed to create checkout session' 
+    } as ApiResponse);
+  }
+});
+
+// Create Stripe Checkout Session for Website (uses Firebase idToken instead of sessionToken)
+router.post('/create-checkout', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { idToken, email } = req.body;
+
+    if (!idToken || !email) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing required fields: idToken, email'
+      } as ApiResponse);
+      return;
+    }
+
+    console.log('💳 Creating checkout session for website user:', email);
+
+    // Find user by email
+    const userModel = new User();
+    let user = await userModel.findByEmail(email);
+
+    if (!user) {
+      console.log('⚠️ User not found, they need to sign in to the app first');
+      res.status(404).json({
+        success: false,
+        error: 'User not found. Please sign in to the app first.'
+      } as ApiResponse);
+      return;
+    }
+
+    // Check if user already has an active subscription
+    const subscriptionModel = new Subscription();
+    const activeSubscription = await subscriptionModel.findActiveByUserId(user.id);
+
+    if (activeSubscription) {
+      console.log('⚠️ User already has active subscription');
+      res.status(400).json({
+        success: false,
+        error: 'You already have an active subscription'
+      } as ApiResponse);
+      return;
+    }
+
+    // Create or retrieve Stripe customer
+    let stripeCustomerId = user.stripeCustomerId;
+
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        metadata: {
+          userId: user.id,
+          provider: user.provider || 'unknown'
+        }
+      });
+      stripeCustomerId = customer.id;
+
+      // Update user with Stripe customer ID
+      await userModel.update(user.id, { stripeCustomerId });
+      console.log('✅ Created Stripe customer:', stripeCustomerId);
+    }
+
+    // Create checkout session
+    const session = await stripe.checkout.sessions.create({
+      customer: stripeCustomerId,
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: PRICE_ID,
+          quantity: 1,
+        },
+      ],
+      success_url: `${SUCCESS_URL}?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: CANCEL_URL,
+      metadata: {
+        userId: user.id,
+        email: user.email,
+      },
+      subscription_data: {
+        metadata: {
+          userId: user.id,
+          email: user.email,
+        },
+      },
+    });
+
+    console.log('✅ Checkout session created:', session.id);
+
+    res.status(200).json({
+      success: true,
+      url: session.url,
+      sessionId: session.id
+    });
+
+  } catch (error) {
+    console.error('❌ Checkout session creation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create checkout session'
     } as ApiResponse);
   }
 });

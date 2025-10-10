@@ -10,6 +10,7 @@ import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.js';
 import subscriptionRoutes from './routes/subscription.js';
 import connectionRoutes from './routes/connection.js';
+import desktopAuthRoutes from './routes/desktop-auth.js';
 import stripe from './config/stripe.js';
 import './config/firebase.js'; // Initialize Firebase
 import User from './models/User.js';
@@ -311,6 +312,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/connection', connectionRoutes);
+app.use('/api/desktop-auth', desktopAuthRoutes);
 
 // Health check endpoint
 app.get('/health', async (_req: Request, res: Response): Promise<void> => {

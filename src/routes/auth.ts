@@ -3,7 +3,98 @@ import User from '../models/User.js';
 import { generatePermanentSessionToken } from '../utils/auth.js';
 import type { AppleSignInData, ApiResponse, SessionTokenPayload } from '../types/index.js';
 
+// Extend global namespace for blacklist storage
+declare global {
+  var deletedAppleUsers: Map<string, any> | undefined;
+  var deletedGoogleUsers: Map<string, any> | undefined;
+  var deletedFirebaseUsers: Map<string, any> | undefined;
+}
+
 const router = express.Router();
+
+/**
+ * Check if a user is blacklisted (previously deleted)
+ * Only blocks recreation within 5 minutes of deletion to prevent automatic recreation
+ * After 5 minutes, users can intentionally create a new account
+ * Returns { isBlacklisted: boolean, minutesRemaining?: number }
+ */
+function checkIfUserIsBlacklisted(firebaseUid: string, appleUserId?: string): { isBlacklisted: boolean; minutesRemaining?: number } {
+  try {
+    const BLACKLIST_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+    const now = Date.now();
+    
+    // Check Firebase UID blacklist
+    if (firebaseUid && global.deletedFirebaseUsers) {
+      const deletedUser = global.deletedFirebaseUsers.get(firebaseUid);
+      if (deletedUser) {
+        const deletedAt = new Date(deletedUser.deletedAt).getTime();
+        const timeSinceDeletion = now - deletedAt;
+        
+        if (timeSinceDeletion < BLACKLIST_DURATION_MS) {
+          const timeRemaining = BLACKLIST_DURATION_MS - timeSinceDeletion;
+          const minutesRemaining = Math.ceil(timeRemaining / 60000); // Round up to nearest minute
+          console.log('🚨 Found recently blacklisted Firebase UID:', firebaseUid);
+          console.log('🚨 Time since deletion:', Math.floor(timeSinceDeletion / 1000), 'seconds');
+          console.log('🚨 Minutes remaining:', minutesRemaining);
+          return { isBlacklisted: true, minutesRemaining };
+        } else {
+          // Expired - remove from blacklist
+          console.log('✅ Blacklist expired for Firebase UID:', firebaseUid);
+          global.deletedFirebaseUsers.delete(firebaseUid);
+        }
+      }
+    }
+    
+    // Check Apple User ID blacklist
+    if (appleUserId && global.deletedAppleUsers) {
+      const deletedUser = global.deletedAppleUsers.get(appleUserId);
+      if (deletedUser) {
+        const deletedAt = new Date(deletedUser.deletedAt).getTime();
+        const timeSinceDeletion = now - deletedAt;
+        
+        if (timeSinceDeletion < BLACKLIST_DURATION_MS) {
+          const timeRemaining = BLACKLIST_DURATION_MS - timeSinceDeletion;
+          const minutesRemaining = Math.ceil(timeRemaining / 60000); // Round up to nearest minute
+          console.log('🚨 Found recently blacklisted Apple User ID:', appleUserId);
+          console.log('🚨 Time since deletion:', Math.floor(timeSinceDeletion / 1000), 'seconds');
+          console.log('🚨 Minutes remaining:', minutesRemaining);
+          return { isBlacklisted: true, minutesRemaining };
+        } else {
+          // Expired - remove from blacklist
+          console.log('✅ Blacklist expired for Apple User ID:', appleUserId);
+          global.deletedAppleUsers.delete(appleUserId);
+        }
+      }
+    }
+    
+    // Check Google User ID blacklist
+    if (firebaseUid && global.deletedGoogleUsers) {
+      const deletedUser = global.deletedGoogleUsers.get(firebaseUid);
+      if (deletedUser) {
+        const deletedAt = new Date(deletedUser.deletedAt).getTime();
+        const timeSinceDeletion = now - deletedAt;
+        
+        if (timeSinceDeletion < BLACKLIST_DURATION_MS) {
+          const timeRemaining = BLACKLIST_DURATION_MS - timeSinceDeletion;
+          const minutesRemaining = Math.ceil(timeRemaining / 60000); // Round up to nearest minute
+          console.log('🚨 Found recently blacklisted Google User ID:', firebaseUid);
+          console.log('🚨 Time since deletion:', Math.floor(timeSinceDeletion / 1000), 'seconds');
+          console.log('🚨 Minutes remaining:', minutesRemaining);
+          return { isBlacklisted: true, minutesRemaining };
+        } else {
+          // Expired - remove from blacklist
+          console.log('✅ Blacklist expired for Google User ID:', firebaseUid);
+          global.deletedGoogleUsers.delete(firebaseUid);
+        }
+      }
+    }
+    
+    return { isBlacklisted: false };
+  } catch (error) {
+    console.error('❌ Error checking blacklist:', error);
+    return { isBlacklisted: false };
+  }
+}
 
 /**
  * Apple Sign-In Authentication
@@ -14,31 +105,103 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
     const { identityToken, userIdentifier, email, fullName } = req.body as AppleSignInData;
 
     // Validate required fields
-    if (!identityToken || !userIdentifier) {
+    if (!identityToken) {
       res.status(400).json({
         success: false,
-        error: 'Missing required fields: identityToken, userIdentifier'
+        error: 'Missing required field: identityToken'
       } as ApiResponse);
       return;
     }
 
-    console.log('🍎 Apple Sign-In request:', { userIdentifier, email, fullName });
+    console.log('🍎 Apple Sign-In request:', { userIdentifier, email, fullName, isPrivateRelay: email?.includes('@privaterelay.appleid.com') });
 
-    // Verify Apple identity token with Firebase
     let firebaseUid: string;
+    let userEmail: string;
+    let displayName: string | undefined;
     let emailVerified = false;
+    let appleUserId: string;
 
     try {
-      // For Apple Sign-In, we need to verify the token with Apple's servers first
-      // Since Firebase expects a different audience, we'll use the userIdentifier directly
-      console.log('🔍 Processing Apple Sign-In with userIdentifier:', userIdentifier);
+      // Try to verify as Firebase ID token first (from web Firebase Auth)
+      console.log('🔍 Attempting to verify as Firebase ID token...');
       
-      // For now, we'll use the userIdentifier as the Firebase UID
-      // In a production setup, you'd verify the Apple token with Apple's servers
-      firebaseUid = `apple_${userIdentifier}`;
-      emailVerified = false; // Apple doesn't guarantee email verification
-      
-      console.log('✅ Apple Sign-In processed:', { firebaseUid, emailVerified });
+      try {
+        const admin = await import('firebase-admin');
+        const decodedToken = await admin.auth().verifyIdToken(identityToken);
+        console.log('✅ Firebase ID token verified (Apple via Firebase Auth)');
+        
+        firebaseUid = decodedToken.uid;
+        // Use the userIdentifier from the request body (Apple's actual user ID from providerData)
+        // If not provided, fall back to Firebase UID (for backward compatibility)
+        appleUserId = userIdentifier || decodedToken.uid;
+        
+        // IMPORTANT: Apple always provides an email (either real or private relay)
+        // Firebase token should always contain the email
+        // Empty string from client should be treated as missing email
+        const clientEmail = email && email.trim() !== '' ? email : undefined;
+        
+        if (!decodedToken.email && !clientEmail) {
+          throw new Error('No email found in Firebase token or client request');
+        }
+        
+        userEmail = decodedToken.email || clientEmail!;
+        displayName = decodedToken.name || fullName || userEmail.split('@')[0];
+        emailVerified = decodedToken.email_verified || false;
+        
+        console.log('✅ User info from Firebase token:', { firebaseUid, appleUserId, userEmail, displayName, emailVerified, emailSource: decodedToken.email ? 'token' : 'client' });
+      } catch (firebaseError) {
+        // Fallback to native Apple token (from iOS/Android apps)
+        console.log('⚠️ Not a Firebase token, decoding native Apple identity token...');
+        
+        if (!userIdentifier) {
+          throw new Error('userIdentifier required for native Apple sign-in');
+        }
+        
+        // Decode the Apple identity token (JWT) to extract the email
+        // Apple's identity token contains the private relay email in the payload
+        try {
+          const tokenParts = identityToken.split('.');
+          if (tokenParts.length !== 3) {
+            throw new Error('Invalid JWT format');
+          }
+          
+          // Decode the payload (second part of JWT)
+          const payloadBase64 = tokenParts[1];
+          if (!payloadBase64) {
+            throw new Error('Invalid JWT: missing payload');
+          }
+          const payload = JSON.parse(Buffer.from(payloadBase64, 'base64').toString());
+          console.log('🔍 Decoded Apple token payload:', { 
+            sub: payload.sub, 
+            email: payload.email, 
+            email_verified: payload.email_verified 
+          });
+          
+          firebaseUid = `apple_${userIdentifier}`;
+          appleUserId = userIdentifier;
+          
+          // Use the email from the token (Apple's private relay email)
+          // If not in token, use the email from client
+          // NEVER use placeholder email
+          const tokenEmail = payload.email;
+          const clientEmail = email && email.trim() !== '' ? email : undefined;
+          userEmail = tokenEmail || clientEmail || `${userIdentifier}@privaterelay.appleid.com`;
+          
+          displayName = fullName || payload.name || userEmail.split('@')[0];
+          emailVerified = payload.email_verified === 'true' || payload.email_verified === true;
+          
+          console.log('✅ Apple Sign-In processed (native):', { 
+            firebaseUid, 
+            appleUserId, 
+            userEmail, 
+            emailVerified,
+            emailSource: tokenEmail ? 'token' : clientEmail ? 'client' : 'fallback' 
+          });
+        } catch (decodeError) {
+          console.error('❌ Failed to decode Apple identity token:', decodeError);
+          throw new Error('Failed to decode Apple identity token');
+        }
+      }
     } catch (error) {
       console.error('❌ Failed to process Apple Sign-In:', error);
       console.error('❌ Error details:', {
@@ -53,51 +216,82 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Check if user exists
+    // Check if user exists - try multiple lookup strategies
     const userModel = new User();
-    let user = await userModel.findByAppleUserId(userIdentifier);
+    let user = await userModel.findByFirebaseUid(firebaseUid);
+    
+    console.log('🔍 User lookup by firebaseUid:', firebaseUid, user ? 'Found' : 'Not found');
+    
+    if (!user && appleUserId) {
+      user = await userModel.findByAppleUserId(appleUserId);
+      console.log('🔍 User lookup by appleUserId:', appleUserId, user ? 'Found' : 'Not found');
+    }
+
+    // IMPORTANT: For Apple Sign-In, do NOT try to match by email!
+    // Apple generates different private relay emails for web vs desktop apps
+    // We must rely solely on appleUserId for cross-platform matching
+    if (!user && userEmail && userEmail.trim() !== '' && userEmail !== 'user@apple.com' && !userEmail.includes('@privaterelay.appleid.com')) {
+      // Only try email matching for non-Apple users or non-private-relay emails
+      user = await userModel.findByEmail(userEmail);
+      console.log('🔍 User lookup by email (non-Apple):', userEmail, user ? 'Found' : 'Not found');
+    } else if (userEmail && userEmail.includes('@privaterelay.appleid.com')) {
+      console.log('🍎 Skipping email lookup for Apple private relay email:', userEmail);
+      console.log('🍎 Relying on appleUserId for cross-platform matching:', appleUserId);
+    }
 
     if (!user) {
-      // Try to find by email only if email is provided (in case user signed in with different method before)
-      if (email && email.trim() !== '') {
-        user = await userModel.findByEmail(email);
+      // Check if this user was previously deleted (blacklisted)
+      const blacklistCheck = checkIfUserIsBlacklisted(firebaseUid, appleUserId);
+      
+      if (blacklistCheck.isBlacklisted) {
+        console.log('🚨 User is blacklisted (previously deleted):', { firebaseUid, appleUserId });
+        console.log('🚨 This user was deleted recently and should not be recreated yet');
+        
+        const minutesText = blacklistCheck.minutesRemaining === 1 ? '1 minute' : `${blacklistCheck.minutesRemaining} minutes`;
+        
+        res.status(403).json({
+          success: false,
+          error: `Your account was recently deleted. Please wait ${minutesText} before creating a new account, or sign out completely and try again.`,
+          accountDeleted: true,
+          minutesRemaining: blacklistCheck.minutesRemaining
+        } as ApiResponse);
+        return;
       }
       
-      if (user) {
-        // Update existing user with Apple credentials
-        console.log('📝 Updating existing user with Apple credentials');
-        user = await userModel.update(user.id, {
-          appleUserId: userIdentifier,
-          firebaseUid,
-          provider: 'apple',
-          emailVerified
-        });
-      } else {
-        // Create new user
-        console.log('👤 Creating new user with Apple credentials');
-        const displayName = fullName || (email && email.trim() !== '' ? email.split('@')[0] : `Apple User ${userIdentifier.substring(0, 8)}`);
-        
-        // Apple Sign-In may not provide email on subsequent sign-ins
-        // Use a fallback email based on a shortened user identifier
-        const shortId = userIdentifier.substring(0, 10);
-        const userEmail = email && email.trim() !== '' ? email : `${shortId}@privaterelay.appleid.com`;
-        
-        user = await userModel.create({
-          firebaseUid,
-          appleUserId: userIdentifier,
-          email: userEmail,
-          displayName,
-          provider: 'apple',
-          emailVerified
-        });
-      }
-    } else {
-      // Update last login and ensure firebase UID is set
-      console.log('👤 Existing Apple user found, updating...');
-      user = await userModel.update(user.id, {
+      // Create new user (only for truly new users)
+      console.log('👤 Creating new user with Apple credentials');
+      console.log('👤 User data:', { firebaseUid, appleUserId, userEmail, displayName, provider: 'apple' });
+      
+      user = await userModel.create({
         firebaseUid,
+        appleUserId: appleUserId,
+        email: userEmail,
+        displayName: displayName || userEmail.split('@')[0],
+        provider: 'apple',
         emailVerified
       });
+      
+      console.log('✅ New user created:', user.id);
+    } else {
+      // Update existing user
+      console.log('👤 Existing user found, updating credentials');
+      console.log('👤 Existing user data:', { 
+        id: user.id, 
+        existingFirebaseUid: user.firebaseUid, 
+        existingAppleUserId: user.appleUserId,
+        existingEmail: user.email 
+      });
+      
+      // Update with new credentials
+      user = await userModel.update(user.id, {
+        firebaseUid,
+        appleUserId: appleUserId, // Always update with the latest Apple user ID
+        provider: 'apple',
+        displayName: displayName || user.displayName || undefined,
+        emailVerified
+      });
+      
+      console.log('✅ User updated:', user.id);
     }
 
     // Generate session token
@@ -108,7 +302,24 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
     };
     const sessionToken = generatePermanentSessionToken(tokenPayload);
 
-    console.log('✅ Apple Sign-In successful for user:', user.id);
+    // Get user's subscription data
+    const { default: Subscription } = await import('../models/Subscription.js');
+    const subscriptionModel = new Subscription();
+    const activeSubscription = await subscriptionModel.findActiveByUserId(user.id);
+
+    let subscriptionData = null;
+    if (activeSubscription) {
+      subscriptionData = {
+        status: activeSubscription.status,
+        endDate: activeSubscription.currentPeriodEnd?.toISOString(),
+        cancelAtPeriodEnd: activeSubscription.cancelAtPeriodEnd
+      };
+    }
+
+      console.log('✅ Apple Sign-In successful for user:', user.id);
+      console.log('✅ User email (may be private relay):', user.email);
+      console.log('✅ Apple User ID (for cross-platform matching):', user.appleUserId);
+      console.log('✅ Subscription status:', subscriptionData ? subscriptionData.status : 'none');
 
     res.status(200).json({
       success: true,
@@ -120,7 +331,7 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
       },
       sessionToken,
       authMethod: 'apple',
-      subscription: null
+      subscription: subscriptionData
     } as ApiResponse);
 
   } catch (error) {
@@ -158,38 +369,71 @@ router.post('/google/signin', async (req: Request, res: Response): Promise<void>
     let googleUserId: string;
 
     try {
-      // Verify Google OAuth token with Google's API
-      console.log('🔍 Verifying Google OAuth token with Google API...');
+      // This endpoint handles tokens from multiple sources:
+      // 1. Google OAuth access tokens (from website and mobile apps) - PRIMARY
+      // 2. Firebase ID tokens (fallback for website)
+      console.log('🔍 Verifying token...');
       console.log('🔍 Token length:', idToken.length);
       console.log('🔍 Token preview:', idToken.substring(0, 50) + '...');
       
-      // Call Google's tokeninfo API to verify the token and get user info
-      const googleResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${idToken}`);
-      
-      if (!googleResponse.ok) {
-        throw new Error(`Google token verification failed: ${googleResponse.status}`);
-      }
-      
-      const googleData = await googleResponse.json() as any;
-      console.log('🔍 Google token info:', { 
-        email: googleData.email, 
-        name: googleData.name, 
-        verified_email: googleData.verified_email 
-      });
-      
-      // Extract user information from Google's response
-      googleUserId = googleData.sub || `google_${idToken.substring(0, 20)}`;
-      firebaseUid = googleUserId;
-      email = googleData.email || 'user@google.com';
-      displayName = googleData.name || 'Google User';
-      emailVerified = googleData.verified_email === 'true';
+      try {
+        // OPTION 1: Try Google OAuth access token first (Website + Mobile)
+        console.log('🔍 Attempting Google OAuth access token verification...');
+        const googleResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${idToken}`);
+        
+        if (!googleResponse.ok) {
+          throw new Error(`Google token verification failed: ${googleResponse.status}`);
+        }
+        
+        const googleData = await googleResponse.json() as any;
+        console.log('✅ Google OAuth access token verified');
+        console.log('🔍 Google token info:', { 
+          email: googleData.email, 
+          name: googleData.name, 
+          verified_email: googleData.verified_email 
+        });
+        
+        // Extract user information from Google's response
+        googleUserId = googleData.sub;
+        firebaseUid = googleUserId;
+        
+        // Google always provides an email
+        if (!googleData.email) {
+          throw new Error('No email in Google OAuth response');
+        }
+        
+        email = googleData.email;
+        displayName = googleData.name || email.split('@')[0];
+        emailVerified = googleData.verified_email === 'true' || googleData.verified_email === true;
 
-      console.log('✅ Google OAuth token verified:', { firebaseUid, email, displayName, emailVerified });
+        console.log('✅ User info from Google OAuth:', { firebaseUid, email, displayName, emailVerified });
+      } catch (googleError) {
+        // OPTION 2: Fallback to Firebase ID token (Website alternative)
+        console.log('⚠️ Not a Google OAuth token, trying Firebase ID token...');
+        
+        const admin = await import('firebase-admin');
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        console.log('✅ Firebase ID token verified (Website login)');
+        
+        firebaseUid = decodedToken.uid;
+        googleUserId = decodedToken.uid;
+        
+        // Firebase token should always have email for Google sign-in
+        if (!decodedToken.email) {
+          throw new Error('No email in Firebase token');
+        }
+        
+        email = decodedToken.email;
+        displayName = decodedToken.name || email.split('@')[0];
+        emailVerified = decodedToken.email_verified || false;
+        
+        console.log('✅ User info from Firebase token:', { firebaseUid, email, displayName, emailVerified });
+      }
     } catch (error) {
-      console.error('❌ Failed to verify Google OAuth token:', error);
+      console.error('❌ Failed to verify token:', error);
       res.status(401).json({
         success: false,
-        error: 'Invalid Google OAuth token'
+        error: 'Invalid token - must be Google OAuth access token or Firebase ID token'
       } as ApiResponse);
       return;
     }
@@ -212,7 +456,25 @@ router.post('/google/signin', async (req: Request, res: Response): Promise<void>
           emailVerified
         });
       } else {
-        // Create new user
+        // Check if this user was previously deleted (blacklisted)
+        const blacklistCheck = checkIfUserIsBlacklisted(firebaseUid);
+        
+        if (blacklistCheck.isBlacklisted) {
+          console.log('🚨 User is blacklisted (previously deleted):', { firebaseUid, email });
+          console.log('🚨 This user was deleted recently and should not be recreated yet');
+          
+          const minutesText = blacklistCheck.minutesRemaining === 1 ? '1 minute' : `${blacklistCheck.minutesRemaining} minutes`;
+          
+          res.status(403).json({
+            success: false,
+            error: `Your account was recently deleted. Please wait ${minutesText} before creating a new account, or sign out completely and try again.`,
+            accountDeleted: true,
+            minutesRemaining: blacklistCheck.minutesRemaining
+          } as ApiResponse);
+          return;
+        }
+        
+        // Create new user (only for truly new users)
         console.log('👤 Creating new user with Google credentials');
         user = await userModel.create({
           firebaseUid,
@@ -236,7 +498,22 @@ router.post('/google/signin', async (req: Request, res: Response): Promise<void>
     };
     const sessionToken = generatePermanentSessionToken(tokenPayload);
 
+    // Get user's subscription data
+    const { default: Subscription } = await import('../models/Subscription.js');
+    const subscriptionModel = new Subscription();
+    const activeSubscription = await subscriptionModel.findActiveByUserId(user.id);
+
+    let subscriptionData = null;
+    if (activeSubscription) {
+      subscriptionData = {
+        status: activeSubscription.status,
+        endDate: activeSubscription.currentPeriodEnd?.toISOString(),
+        cancelAtPeriodEnd: activeSubscription.cancelAtPeriodEnd
+      };
+    }
+
     console.log('✅ Google Sign-In successful for user:', user.id);
+    console.log('✅ Subscription status:', subscriptionData ? subscriptionData.status : 'none');
 
     res.status(200).json({
       success: true,
@@ -248,7 +525,7 @@ router.post('/google/signin', async (req: Request, res: Response): Promise<void>
       },
       sessionToken,
       authMethod: 'google',
-      subscription: null
+      subscription: subscriptionData
     } as ApiResponse);
 
   } catch (error) {
@@ -355,29 +632,106 @@ router.delete('/delete-account', async (req: Request, res: Response): Promise<vo
 
     // Find and delete the user
     const userModel = new User();
-    const user = await userModel.findById(userId);
+    
+    // Try to find user by database ID first, then by Firebase UID
+    let user = await userModel.findById(userId);
+    
+    if (!user) {
+      console.log('🔍 User not found by ID, trying Firebase UID...');
+      user = await userModel.findByFirebaseUid(userId);
+    }
+    
+    // If still not found, try to find by email as a last resort
+    if (!user) {
+      console.log('🔍 User not found by Firebase UID, trying email...');
+      user = await userModel.findByEmail(email);
+      
+      if (user) {
+        console.log('✅ User found by email:', { id: user.id, email: user.email, firebaseUid: user.firebaseUid });
+      }
+    }
 
     if (!user) {
+      console.log('❌ User not found by ID, Firebase UID, or email:', { userId, email });
       res.status(404).json({
         success: false,
-        error: 'User not found'
+        error: 'User account not found. It may have already been deleted.'
       } as ApiResponse);
       return;
     }
+    
+    console.log('✅ User found:', { id: user.id, email: user.email, firebaseUid: user.firebaseUid });
 
     // Verify the email matches (additional security check)
-    if (user.email !== email) {
-      res.status(400).json({
-        success: false,
-        error: 'Email does not match user account'
-      } as ApiResponse);
-      return;
+    // Skip email verification for Apple users with private relay emails
+    // Apple generates different private relay emails for web vs desktop, so we can't rely on email matching
+    const isApplePrivateRelay = email.includes('@privaterelay.appleid.com') || user.email.includes('@privaterelay.appleid.com');
+    
+    if (isApplePrivateRelay) {
+      console.log('✅ Skipping email verification for Apple user (private relay email)');
+      console.log('✅ User verified by Firebase UID/Apple User ID instead');
+    } else {
+      // Normalize emails for comparison (trim and lowercase)
+      const normalizedUserEmail = user.email.trim().toLowerCase();
+      const normalizedRequestEmail = email.trim().toLowerCase();
+      
+      console.log('🔍 Email comparison:', { 
+        requestEmail: email, 
+        normalizedRequestEmail,
+        userEmail: user.email, 
+        normalizedUserEmail,
+        match: normalizedUserEmail === normalizedRequestEmail 
+      });
+      
+      if (normalizedUserEmail !== normalizedRequestEmail) {
+        console.log('❌ Email mismatch!');
+        res.status(400).json({
+          success: false,
+          error: 'Email does not match user account'
+        } as ApiResponse);
+        return;
+      }
+      
+      console.log('✅ Email verified successfully');
     }
 
+    // Store identifiers before deletion for blacklisting
+    const appleUserId = user.appleUserId;
+    const googleUserId = user.googleUserId;
+    const firebaseUid = user.firebaseUid;
+    const dbUserId = user.id; // Use the database ID for deletion
+    
+    // Create a simple blacklist entry in localStorage/sessionStorage equivalent
+    // For now, we'll use a simple in-memory blacklist (in production, use Redis or database)
+    const deletedUserInfo = {
+      userId: dbUserId,
+      appleUserId,
+      googleUserId,
+      firebaseUid,
+      email: user.email,
+      deletedAt: new Date().toISOString()
+    };
+    
+    // Store in a simple way - in production, use Redis or a proper blacklist table
+    if (appleUserId) {
+      global.deletedAppleUsers = global.deletedAppleUsers || new Map();
+      global.deletedAppleUsers.set(appleUserId, deletedUserInfo);
+    }
+    if (googleUserId) {
+      global.deletedGoogleUsers = global.deletedGoogleUsers || new Map();
+      global.deletedGoogleUsers.set(googleUserId, deletedUserInfo);
+    }
+    if (firebaseUid) {
+      global.deletedFirebaseUsers = global.deletedFirebaseUsers || new Map();
+      global.deletedFirebaseUsers.set(firebaseUid, deletedUserInfo);
+    }
+    
     // Delete the user (this will cascade delete subscriptions and sessions due to foreign key constraints)
-    await userModel.delete(userId);
+    // Use the database ID, not the Firebase UID
+    await userModel.delete(dbUserId);
 
-    console.log('✅ Account deletion successful for user:', userId);
+    console.log('✅ Account deletion successful for user:', dbUserId);
+    console.log('✅ Blacklisted identifiers:', { appleUserId, googleUserId, firebaseUid });
 
     res.status(200).json({
       success: true,

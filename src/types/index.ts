@@ -20,6 +20,7 @@ export interface UpdateUserData {
   googleUserId?: string;
   provider?: string;
   emailVerified?: boolean;
+  stripeCustomerId?: string;
 }
 
 // Subscription related types

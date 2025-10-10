@@ -14,16 +14,17 @@ datasource db {
 // USER MODEL
 // ========================================
 model User {
-  id            String   @id @default(uuid())
-  firebaseUid   String?  @unique @map("firebase_uid")
-  appleUserId   String?  @unique @map("apple_user_id")
-  googleUserId  String?  @unique @map("google_user_id")
-  email         String   @unique
-  displayName   String?  @map("display_name")
-  provider      String   @default("google")
-  emailVerified Boolean  @default(false) @map("email_verified")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(uuid())
+  firebaseUid      String?  @unique @map("firebase_uid")
+  appleUserId      String?  @unique @map("apple_user_id")
+  googleUserId     String?  @unique @map("google_user_id")
+  email            String   @unique
+  displayName      String?  @map("display_name")
+  provider         String   @default("google")
+  emailVerified    Boolean  @default(false) @map("email_verified")
+  stripeCustomerId String?  @unique @map("stripe_customer_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   // Relations
   subscriptions      Subscription[]
