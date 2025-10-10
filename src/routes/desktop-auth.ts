@@ -71,7 +71,7 @@ router.post('/generate-code', async (req: Request, res: Response): Promise<void>
     res.status(200).json({
       success: true,
       code,
-      deepLink: `keenvpn://auth/callback?code=${code}`
+      deepLink: `vpnkeen://auth/callback?code=${code}`
     } as ApiResponse);
 
   } catch (error) {
