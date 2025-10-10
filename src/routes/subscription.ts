@@ -99,7 +99,8 @@ router.post('/status-session', async (req: Request, res: Response): Promise<void
         status: activeSubscription?.status || 'inactive',
         plan: activeSubscription?.planName || '',
         endDate: activeSubscription?.currentPeriodEnd || '',
-        customerId: activeSubscription?.stripeCustomerId || ''
+        customerId: activeSubscription?.stripeCustomerId || '',
+        cancelAtPeriodEnd: activeSubscription?.cancelAtPeriodEnd || false
       },
       hasActiveSubscription
     } as ApiResponse);
