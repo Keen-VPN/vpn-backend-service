@@ -177,7 +177,7 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
             email_verified: payload.email_verified 
           });
           
-          firebaseUid = `apple_${userIdentifier}`;
+      firebaseUid = `apple_${userIdentifier}`;
           appleUserId = userIdentifier;
           
           // Use the email from the token (Apple's private relay email)
@@ -261,15 +261,15 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
       // Create new user (only for truly new users)
       console.log('👤 Creating new user with Apple credentials');
       console.log('👤 User data:', { firebaseUid, appleUserId, userEmail, displayName, provider: 'apple' });
-      
-      user = await userModel.create({
-        firebaseUid,
+        
+        user = await userModel.create({
+          firebaseUid,
         appleUserId: appleUserId,
-        email: userEmail,
+          email: userEmail,
         displayName: displayName || userEmail.split('@')[0],
-        provider: 'apple',
-        emailVerified
-      });
+          provider: 'apple',
+          emailVerified
+        });
       
       console.log('✅ New user created:', user.id);
     } else {
@@ -316,7 +316,7 @@ router.post('/apple/signin', async (req: Request, res: Response): Promise<void> 
       };
     }
 
-      console.log('✅ Apple Sign-In successful for user:', user.id);
+    console.log('✅ Apple Sign-In successful for user:', user.id);
       console.log('✅ User email (may be private relay):', user.email);
       console.log('✅ Apple User ID (for cross-platform matching):', user.appleUserId);
       console.log('✅ Subscription status:', subscriptionData ? subscriptionData.status : 'none');
@@ -379,23 +379,23 @@ router.post('/google/signin', async (req: Request, res: Response): Promise<void>
       try {
         // OPTION 1: Try Google OAuth access token first (Website + Mobile)
         console.log('🔍 Attempting Google OAuth access token verification...');
-        const googleResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${idToken}`);
-        
-        if (!googleResponse.ok) {
-          throw new Error(`Google token verification failed: ${googleResponse.status}`);
-        }
-        
-        const googleData = await googleResponse.json() as any;
+      const googleResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${idToken}`);
+      
+      if (!googleResponse.ok) {
+        throw new Error(`Google token verification failed: ${googleResponse.status}`);
+      }
+      
+      const googleData = await googleResponse.json() as any;
         console.log('✅ Google OAuth access token verified');
-        console.log('🔍 Google token info:', { 
-          email: googleData.email, 
-          name: googleData.name, 
-          verified_email: googleData.verified_email 
-        });
-        
-        // Extract user information from Google's response
+      console.log('🔍 Google token info:', { 
+        email: googleData.email, 
+        name: googleData.name, 
+        verified_email: googleData.verified_email 
+      });
+      
+      // Extract user information from Google's response
         googleUserId = googleData.sub;
-        firebaseUid = googleUserId;
+      firebaseUid = googleUserId;
         
         // Google always provides an email
         if (!googleData.email) {
@@ -635,7 +635,7 @@ router.delete('/delete-account', async (req: Request, res: Response): Promise<vo
     
     // Try to find user by database ID first, then by Firebase UID
     let user = await userModel.findById(userId);
-    
+
     if (!user) {
       console.log('🔍 User not found by ID, trying Firebase UID...');
       user = await userModel.findByFirebaseUid(userId);
@@ -685,11 +685,11 @@ router.delete('/delete-account', async (req: Request, res: Response): Promise<vo
       
       if (normalizedUserEmail !== normalizedRequestEmail) {
         console.log('❌ Email mismatch!');
-        res.status(400).json({
-          success: false,
-          error: 'Email does not match user account'
-        } as ApiResponse);
-        return;
+      res.status(400).json({
+        success: false,
+        error: 'Email does not match user account'
+      } as ApiResponse);
+      return;
       }
       
       console.log('✅ Email verified successfully');
@@ -725,7 +725,7 @@ router.delete('/delete-account', async (req: Request, res: Response): Promise<vo
       global.deletedFirebaseUsers = global.deletedFirebaseUsers || new Map();
       global.deletedFirebaseUsers.set(firebaseUid, deletedUserInfo);
     }
-    
+
     // Delete the user (this will cascade delete subscriptions and sessions due to foreign key constraints)
     // Use the database ID, not the Firebase UID
     await userModel.delete(dbUserId);
