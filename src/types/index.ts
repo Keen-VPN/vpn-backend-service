@@ -9,7 +9,7 @@ export interface CreateUserData {
   googleUserId?: string;
   email: string;
   displayName?: string;
-  provider?: 'google' | 'apple' | 'firebase' | 'demo';
+  provider?: "google" | "apple" | "firebase" | "demo";
   emailVerified?: boolean;
 }
 
@@ -28,12 +28,12 @@ export interface CreateSubscriptionData {
   userId: string;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
-  status?: 'active' | 'inactive' | 'cancelled' | 'past_due' | 'trialing';
+  status?: "active" | "inactive" | "cancelled" | "past_due" | "trialing";
   planId?: string;
   planName?: string;
   priceAmount?: number;
   priceCurrency?: string;
-  billingPeriod?: 'year' | 'month';
+  billingPeriod?: "year" | "month";
   currentPeriodStart?: Date;
   currentPeriodEnd?: Date;
   cancelAtPeriodEnd?: boolean;
@@ -42,12 +42,12 @@ export interface CreateSubscriptionData {
 export interface UpdateSubscriptionData {
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
-  status?: 'active' | 'inactive' | 'cancelled' | 'past_due' | 'trialing';
+  status?: "active" | "inactive" | "cancelled" | "past_due" | "trialing";
   planId?: string;
   planName?: string;
   priceAmount?: number;
   priceCurrency?: string;
-  billingPeriod?: 'year' | 'month';
+  billingPeriod?: "year" | "month";
   currentPeriodStart?: Date;
   currentPeriodEnd?: Date;
   cancelAtPeriodEnd?: boolean;
@@ -55,6 +55,8 @@ export interface UpdateSubscriptionData {
 }
 
 // Connection Session related types
+export type TerminationReason = "USER_TERMINATION" | "CONNECTION_LOST";
+
 export interface CreateConnectionSessionData {
   userId: string;
   sessionStart: Date;
@@ -66,6 +68,7 @@ export interface CreateConnectionSessionData {
   appVersion?: string | null;
   bytesTransferred?: bigint | number;
   subscriptionTier?: string | null;
+  terminationReason?: TerminationReason;
 }
 
 export interface UpdateConnectionSessionData {
@@ -77,7 +80,7 @@ export interface UpdateConnectionSessionData {
 export interface ConnectionSessionQueryOptions {
   limit?: number;
   offset?: number;
-  orderBy?: 'createdAt' | 'sessionStart' | 'durationSeconds';
+  orderBy?: "createdAt" | "sessionStart" | "durationSeconds";
   ascending?: boolean;
 }
 
@@ -86,16 +89,22 @@ export interface ConnectionStats {
   total_duration_seconds: number;
   total_bytes_transferred: number;
   average_duration_seconds: number;
-  platform_breakdown: Record<string, {
-    sessions: number;
-    duration: number;
-    bytes: number;
-  }>;
-  location_breakdown: Record<string, {
-    sessions: number;
-    duration: number;
-    bytes: number;
-  }>;
+  platform_breakdown: Record<
+    string,
+    {
+      sessions: number;
+      duration: number;
+      bytes: number;
+    }
+  >;
+  location_breakdown: Record<
+    string,
+    {
+      sessions: number;
+      duration: number;
+      bytes: number;
+    }
+  >;
   most_recent_session: {
     date: Date;
     duration: number;
@@ -137,7 +146,7 @@ export interface AppleSignInData {
 export interface SessionTokenPayload {
   userId: string;
   email: string;
-  provider: 'google' | 'apple' | 'firebase' | 'demo';
+  provider: "google" | "apple" | "firebase" | "demo";
 }
 
 // Stripe webhook event types
@@ -148,4 +157,3 @@ export interface StripeWebhookEvent {
     object: any;
   };
 }
-
