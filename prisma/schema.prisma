@@ -64,23 +64,34 @@ model Subscription {
 }
 
 // ========================================
+// ENUMS
+// ========================================
+enum TerminationReason {
+  USER_TERMINATION @map("user_termination")
+  CONNECTION_LOST  @map("connection_lost")
+
+  @@map("termination_reason")
+}
+
+// ========================================
 // CONNECTION SESSION MODEL
 // ========================================
 model ConnectionSession {
-  id               String    @id @default(uuid())
-  userId           String    @map("user_id")
-  sessionStart     DateTime  @map("session_start")
-  sessionEnd       DateTime? @map("session_end")
-  durationSeconds  Int       @default(0) @map("duration_seconds")
-  serverLocation   String?   @map("server_location") // 'US', 'Nigeria', etc.
-  serverAddress    String?   @map("server_address") // IP address of VPN server (for troubleshooting only)
-  platform         String // 'macOS', 'iOS', 'Android', 'Web'
-  appVersion       String?   @map("app_version")
-  bytesTransferred BigInt    @default(0) @map("bytes_transferred")
-  subscriptionTier String?   @map("subscription_tier") // 'free', 'basic', 'premium'
-  isAnonymized     Boolean   @default(false) @map("is_anonymized") // Privacy flag
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  id                String            @id @default(uuid())
+  userId            String            @map("user_id")
+  sessionStart      DateTime          @map("session_start")
+  sessionEnd        DateTime?         @map("session_end")
+  durationSeconds   Int               @default(0) @map("duration_seconds")
+  serverLocation    String?           @map("server_location") // 'US', 'Nigeria', etc.
+  serverAddress     String?           @map("server_address") // IP address of VPN server (for troubleshooting only)
+  platform          String // 'macOS', 'iOS', 'Android', 'Web'
+  appVersion        String?           @map("app_version")
+  bytesTransferred  BigInt            @default(0) @map("bytes_transferred")
+  subscriptionTier  String?           @map("subscription_tier") // 'free', 'basic', 'premium'
+  terminationReason TerminationReason @default(USER_TERMINATION) @map("termination_reason")
+  isAnonymized      Boolean           @default(false) @map("is_anonymized") // Privacy flag
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -91,6 +102,7 @@ model ConnectionSession {
   @@index([durationSeconds])
   @@index([platform])
   @@index([serverLocation])
+  @@index([terminationReason])
   @@index([createdAt])
   @@index([isAnonymized])
   @@index([subscriptionTier])
@@ -99,19 +111,19 @@ model ConnectionSession {
 
 // Aggregated analytics table - fully anonymized, GDPR-compliant
 model SessionAggregate {
-  id              String   @id @default(uuid())
-  aggregationDate DateTime @map("aggregation_date") // Date for this aggregate
-  platform        String // 'iOS', 'macOS', 'Android', 'Web'
-  serverLocation  String   @map("server_location") // 'US', 'Nigeria', etc.
+  id               String   @id @default(uuid())
+  aggregationDate  DateTime @map("aggregation_date") // Date for this aggregate
+  platform         String // 'iOS', 'macOS', 'Android', 'Web'
+  serverLocation   String   @map("server_location") // 'US', 'Nigeria', etc.
   subscriptionTier String?  @map("subscription_tier") // 'free', 'basic', 'premium'
-  totalSessions   Int      @map("total_sessions")
-  totalDuration   Int      @map("total_duration") // seconds
-  totalBytes      BigInt   @map("total_bytes")
-  avgDuration     Int      @map("avg_duration") // seconds
-  avgBytes        BigInt   @map("avg_bytes")
-  uniqueUsers     Int      @map("unique_users") // count only, no identifiers
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  totalSessions    Int      @map("total_sessions")
+  totalDuration    Int      @map("total_duration") // seconds
+  totalBytes       BigInt   @map("total_bytes")
+  avgDuration      Int      @map("avg_duration") // seconds
+  avgBytes         BigInt   @map("avg_bytes")
+  uniqueUsers      Int      @map("unique_users") // count only, no identifiers
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   @@unique([aggregationDate, platform, serverLocation, subscriptionTier])
   @@index([aggregationDate])
@@ -120,4 +132,3 @@ model SessionAggregate {
   @@index([subscriptionTier])
   @@map("session_aggregates")
 }
-
