@@ -6,6 +6,14 @@ import type {
   ApiResponse,
   SessionTokenPayload,
 } from "../types/index.js";
+import express, { Request, Response, Router } from "express";
+import User from "../models/User.js";
+import { generatePermanentSessionToken } from "../utils/auth.js";
+import type {
+  AppleSignInData,
+  ApiResponse,
+  SessionTokenPayload,
+} from "../types/index.js";
 
 // Extend global namespace for blacklist storage
 declare global {
@@ -128,6 +136,12 @@ function checkIfUserIsBlacklisted(
  * Apple Sign-In Authentication
  * Verifies Apple identity token and creates/retrieves user
  */
+router.post(
+  "/apple/signin",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { identityToken, userIdentifier, email, fullName } =
+        req.body as AppleSignInData;
 router.post(
   "/apple/signin",
   async (req: Request, res: Response): Promise<void> => {
@@ -407,6 +421,13 @@ router.post(
         provider: "apple",
       };
       const sessionToken = generatePermanentSessionToken(tokenPayload);
+      // Generate session token
+      const tokenPayload: SessionTokenPayload = {
+        userId: user.id,
+        email: user.email,
+        provider: "apple",
+      };
+      const sessionToken = generatePermanentSessionToken(tokenPayload);
 
       // Get user's subscription data
       const { default: Subscription } = await import(
@@ -458,11 +479,17 @@ router.post(
     }
   }
 );
+);
 
 /**
  * Google Sign-In Authentication
  * Verifies Google ID token and creates/retrieves user
  */
+router.post(
+  "/google/signin",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { idToken } = req.body;
 router.post(
   "/google/signin",
   async (req: Request, res: Response): Promise<void> => {
@@ -476,9 +503,23 @@ router.post(
         } as ApiResponse);
         return;
       }
+      if (!idToken) {
+        res.status(400).json({
+          success: false,
+          error: "Missing required field: idToken",
+        } as ApiResponse);
+        return;
+      }
 
       console.log("🔵 Google Sign-In request");
+      console.log("🔵 Google Sign-In request");
 
+      // Verify Google ID token with Firebase
+      let firebaseUid: string;
+      let email: string;
+      let displayName: string | undefined;
+      let emailVerified: boolean;
+      let googleUserId: string;
       // Verify Google ID token with Firebase
       let firebaseUid: string;
       let email: string;
@@ -580,7 +621,13 @@ router.post(
       // Check if user exists
       const userModel = new User();
       let user = await userModel.findByFirebaseUid(firebaseUid);
+      // Check if user exists
+      const userModel = new User();
+      let user = await userModel.findByFirebaseUid(firebaseUid);
 
+      if (!user) {
+        // Try to find by email
+        user = await userModel.findByEmail(email);
       if (!user) {
         // Try to find by email
         user = await userModel.findByEmail(email);
@@ -644,6 +691,13 @@ router.post(
         provider: "google",
       };
       const sessionToken = generatePermanentSessionToken(tokenPayload);
+      // Generate session token
+      const tokenPayload: SessionTokenPayload = {
+        userId: user.id,
+        email: user.email,
+        provider: "google",
+      };
+      const sessionToken = generatePermanentSessionToken(tokenPayload);
 
       // Get user's subscription data
       const { default: Subscription } = await import(
@@ -690,11 +744,13 @@ router.post(
     }
   }
 );
+);
 
 /**
  * Verify Session Token
  * Validates a session token and returns user info
  */
+router.post("/verify", async (req: Request, res: Response): Promise<void> => {
 router.post("/verify", async (req: Request, res: Response): Promise<void> => {
   try {
     const { sessionToken } = req.body;
@@ -703,17 +759,20 @@ router.post("/verify", async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({
         success: false,
         error: "Missing required field: sessionToken",
+        error: "Missing required field: sessionToken",
       } as ApiResponse);
       return;
     }
 
     // Verify session token
     const { verifyPermanentSessionToken } = await import("../utils/auth.js");
+    const { verifyPermanentSessionToken } = await import("../utils/auth.js");
     const payload = verifyPermanentSessionToken(sessionToken);
 
     if (!payload) {
       res.status(401).json({
         success: false,
+        error: "Invalid or expired session token",
         error: "Invalid or expired session token",
       } as ApiResponse);
       return;
@@ -727,13 +786,18 @@ router.post("/verify", async (req: Request, res: Response): Promise<void> => {
       res.status(404).json({
         success: false,
         error: "User not found",
+        error: "User not found",
       } as ApiResponse);
       return;
     }
 
     // Get user's subscription data
     const { default: Subscription } = await import("../models/Subscription.js");
+    const { default: Subscription } = await import("../models/Subscription.js");
     const subscriptionModel = new Subscription();
+    const activeSubscription = await subscriptionModel.findActiveByUserId(
+      user.id
+    );
     const activeSubscription = await subscriptionModel.findActiveByUserId(
       user.id
     );
@@ -743,6 +807,7 @@ router.post("/verify", async (req: Request, res: Response): Promise<void> => {
       subscriptionData = {
         status: activeSubscription.status,
         endDate: activeSubscription.currentPeriodEnd?.toISOString(),
+        cancelAtPeriodEnd: activeSubscription.cancelAtPeriodEnd,
         cancelAtPeriodEnd: activeSubscription.cancelAtPeriodEnd,
       };
     }
@@ -754,13 +819,18 @@ router.post("/verify", async (req: Request, res: Response): Promise<void> => {
         email: user.email,
         name: user.displayName, // Changed from displayName to name
         provider: user.provider,
+        name: user.displayName, // Changed from displayName to name
+        provider: user.provider,
       },
+      subscription: subscriptionData,
       subscription: subscriptionData,
     } as ApiResponse);
   } catch (error) {
     console.error("❌ Token verification error:", error);
+    console.error("❌ Token verification error:", error);
     res.status(500).json({
       success: false,
+      error: "Failed to verify session token",
       error: "Failed to verify session token",
     } as ApiResponse);
   }
@@ -775,6 +845,11 @@ router.delete(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { email, userId } = req.body;
+router.delete(
+  "/delete-account",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { email, userId } = req.body;
 
       // Validate required fields
       if (!email || !userId) {
@@ -784,7 +859,16 @@ router.delete(
         } as ApiResponse);
         return;
       }
+      // Validate required fields
+      if (!email || !userId) {
+        res.status(400).json({
+          success: false,
+          error: "Missing required fields: email, userId",
+        } as ApiResponse);
+        return;
+      }
 
+      console.log("🗑️ Account deletion request:", { email, userId });
       console.log("🗑️ Account deletion request:", { email, userId });
 
       // Find and delete the user
@@ -920,7 +1004,19 @@ router.delete(
         error: "Failed to delete account",
       } as ApiResponse);
     }
+      res.status(200).json({
+        success: true,
+        message: "Account deleted successfully",
+      } as ApiResponse);
+    } catch (error) {
+      console.error("❌ Account deletion error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to delete account",
+      } as ApiResponse);
+    }
   }
+);
 );
 
 export default router;
