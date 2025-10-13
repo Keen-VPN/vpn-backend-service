@@ -4,12 +4,6 @@ import User from "../models/User.js";
 import Subscription from "../models/Subscription.js";
 import { verifyPermanentSessionToken } from "../utils/auth.js";
 import type { ApiResponse } from "../types/index.js";
-import express, { Request, Response, Router } from "express";
-import stripe from "../config/stripe.js";
-import User from "../models/User.js";
-import Subscription from "../models/Subscription.js";
-import { verifyPermanentSessionToken } from "../utils/auth.js";
-import type { ApiResponse } from "../types/index.js";
 
 const router: Router = express.Router();
 
@@ -21,7 +15,6 @@ const CANCEL_URL =
   process.env.CHECKOUT_CANCEL_URL || "https://vpnkeen.com/cancel";
 
 // Get available subscription plans
-router.get("/plans", async (_req: Request, res: Response): Promise<void> => {
 router.get("/plans", async (_req: Request, res: Response): Promise<void> => {
   try {
     // Updated to reflect single yearly plan at $100
@@ -36,29 +29,7 @@ router.get("/plans", async (_req: Request, res: Response): Promise<void> => {
           "No logs policy",
         ];
     const stripeCheckoutLink = process.env.STRIPE_CHECKOUT_LINK || "";
-    const planPrice = parseFloat(process.env.PLAN_PRICE || "100.00");
-    const planName = process.env.PLAN_NAME || "Premium VPN - Annual";
-    const planFeatures = process.env.PLAN_FEATURES
-      ? process.env.PLAN_FEATURES.split(",")
-      : [
-          "Unlimited bandwidth",
-          "Global servers",
-          "Premium support",
-          "No logs policy",
-        ];
-    const stripeCheckoutLink = process.env.STRIPE_CHECKOUT_LINK || "";
 
-    const plans = [
-      {
-        id: "premium_yearly",
-        name: planName,
-        price: planPrice,
-        period: "year",
-        interval: "year",
-        features: planFeatures,
-        checkoutLink: stripeCheckoutLink,
-      },
-    ];
     const plans = [
       {
         id: "premium_yearly",
@@ -74,16 +45,13 @@ router.get("/plans", async (_req: Request, res: Response): Promise<void> => {
     const response: ApiResponse = {
       success: true,
       data: { plans },
-      data: { plans },
     };
 
     res.json(response);
   } catch (error) {
     console.error("Error getting plans:", error);
-    console.error("Error getting plans:", error);
     res.status(500).json({
       success: false,
-      error: "Failed to get subscription plans",
       error: "Failed to get subscription plans",
     } as ApiResponse);
   }
@@ -95,19 +63,7 @@ router.post(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { sessionToken } = req.body;
-router.post(
-  "/status-session",
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { sessionToken } = req.body;
 
-      if (!sessionToken) {
-        res.status(400).json({
-          success: false,
-          error: "Session token is required",
-        } as ApiResponse);
-        return;
-      }
       if (!sessionToken) {
         res.status(400).json({
           success: false,
@@ -117,10 +73,7 @@ router.post(
       }
 
       console.log("Getting subscription status with session token");
-      console.log("Getting subscription status with session token");
 
-      // Verify the session token
-      const userInfo = verifyPermanentSessionToken(sessionToken);
       // Verify the session token
       const userInfo = verifyPermanentSessionToken(sessionToken);
 
@@ -131,31 +84,13 @@ router.post(
         } as ApiResponse);
         return;
       }
-      if (!userInfo) {
-        res.status(401).json({
-          success: false,
-          error: "Invalid session token",
-        } as ApiResponse);
-        return;
-      }
 
-      const userModel = new User();
-      const subscriptionModel = new Subscription();
       const userModel = new User();
       const subscriptionModel = new Subscription();
 
       // Get user by ID
       const user = await userModel.findById(userInfo.userId);
-      // Get user by ID
-      const user = await userModel.findById(userInfo.userId);
 
-      if (!user) {
-        res.status(404).json({
-          success: false,
-          error: "User not found",
-        } as ApiResponse);
-        return;
-      }
       if (!user) {
         res.status(404).json({
           success: false,
@@ -168,14 +103,7 @@ router.post(
       const activeSubscription = await subscriptionModel.findActiveByUserId(
         user.id
       );
-      // Get active subscription from new subscriptions table
-      const activeSubscription = await subscriptionModel.findActiveByUserId(
-        user.id
-      );
 
-      // Check if subscription is active
-      const hasActiveSubscription =
-        activeSubscription !== null && activeSubscription.status === "active";
       // Check if subscription is active
       const hasActiveSubscription =
         activeSubscription !== null && activeSubscription.status === "active";
@@ -200,10 +128,8 @@ router.post(
     }
   }
 );
-);
 
 // Cancel subscription
-router.post("/cancel", async (req: Request, res: Response): Promise<void> => {
 router.post("/cancel", async (req: Request, res: Response): Promise<void> => {
   try {
     const { sessionToken } = req.body;
@@ -219,14 +145,12 @@ router.post("/cancel", async (req: Request, res: Response): Promise<void> => {
     // Try auth header if session token failed
     if (!userInfo && authHeader) {
       const token = authHeader.replace("Bearer ", "");
-      const token = authHeader.replace("Bearer ", "");
       userInfo = verifyPermanentSessionToken(token);
     }
 
     if (!userInfo) {
       res.status(401).json({
         success: false,
-        error: "No valid authentication token provided",
         error: "No valid authentication token provided",
       } as ApiResponse);
       return;
@@ -242,7 +166,6 @@ router.post("/cancel", async (req: Request, res: Response): Promise<void> => {
       res.status(404).json({
         success: false,
         error: "User not found",
-        error: "User not found",
       } as ApiResponse);
       return;
     }
@@ -251,14 +174,10 @@ router.post("/cancel", async (req: Request, res: Response): Promise<void> => {
     const activeSubscription = await subscriptionModel.findActiveByUserId(
       user.id
     );
-    const activeSubscription = await subscriptionModel.findActiveByUserId(
-      user.id
-    );
 
     if (!activeSubscription) {
       res.status(404).json({
         success: false,
-        error: "No active subscription found",
         error: "No active subscription found",
       } as ApiResponse);
       return;
@@ -272,9 +191,7 @@ router.post("/cancel", async (req: Request, res: Response): Promise<void> => {
           { cancel_at_period_end: true }
         );
         console.log("✅ Stripe subscription marked for cancellation");
-        console.log("✅ Stripe subscription marked for cancellation");
       } catch (stripeError) {
-        console.error("❌ Error cancelling Stripe subscription:", stripeError);
         console.error("❌ Error cancelling Stripe subscription:", stripeError);
         // Continue with local cancellation even if Stripe fails
       }
@@ -284,31 +201,21 @@ router.post("/cancel", async (req: Request, res: Response): Promise<void> => {
     const cancelledSubscription = await subscriptionModel.cancel(
       activeSubscription.id
     );
-    const cancelledSubscription = await subscriptionModel.cancel(
-      activeSubscription.id
-    );
 
     res.json({
       success: true,
       message:
         "Subscription auto-renewal cancelled. You will have access until the end of your billing period.",
-      message:
-        "Subscription auto-renewal cancelled. You will have access until the end of your billing period.",
       subscription: {
         status: "active", // Still active until period end
-        status: "active", // Still active until period end
         cancelAtPeriodEnd: true,
-        endDate: cancelledSubscription.currentPeriodEnd,
-      },
         endDate: cancelledSubscription.currentPeriodEnd,
       },
     } as ApiResponse);
   } catch (error) {
     console.error("Error cancelling subscription:", error);
-    console.error("Error cancelling subscription:", error);
     res.status(500).json({
       success: false,
-      error: "Failed to cancel subscription",
       error: "Failed to cancel subscription",
     } as ApiResponse);
   }
@@ -320,19 +227,7 @@ router.post(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { sessionToken } = req.body;
-router.post(
-  "/create-checkout-session",
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { sessionToken } = req.body;
 
-      if (!sessionToken) {
-        res.status(400).json({
-          success: false,
-          error: "Session token is required",
-        } as ApiResponse);
-        return;
-      }
       if (!sessionToken) {
         res.status(400).json({
           success: false,
@@ -343,16 +238,7 @@ router.post(
 
       // Verify the session token
       const userInfo = verifyPermanentSessionToken(sessionToken);
-      // Verify the session token
-      const userInfo = verifyPermanentSessionToken(sessionToken);
 
-      if (!userInfo) {
-        res.status(401).json({
-          success: false,
-          error: "Invalid session token",
-        } as ApiResponse);
-        return;
-      }
       if (!userInfo) {
         res.status(401).json({
           success: false,
@@ -362,20 +248,10 @@ router.post(
       }
 
       const userModel = new User();
-      const userModel = new User();
 
       // Get user by ID from session token
       const user = await userModel.findById(userInfo.userId);
-      // Get user by ID from session token
-      const user = await userModel.findById(userInfo.userId);
 
-      if (!user) {
-        res.status(404).json({
-          success: false,
-          error: "User not found",
-        } as ApiResponse);
-        return;
-      }
       if (!user) {
         res.status(404).json({
           success: false,
@@ -391,17 +267,7 @@ router.post(
         } as ApiResponse);
         return;
       }
-      if (!user.email) {
-        res.status(400).json({
-          success: false,
-          error: "User email required",
-        } as ApiResponse);
-        return;
-      }
 
-      // Get plan info
-      const planName = process.env.PLAN_NAME || "Premium VPN - Annual";
-      const stripePriceId = process.env.STRIPE_PRICE_ID;
       // Get plan info
       const planName = process.env.PLAN_NAME || "Premium VPN - Annual";
       const stripePriceId = process.env.STRIPE_PRICE_ID;
@@ -413,32 +279,7 @@ router.post(
         } as ApiResponse);
         return;
       }
-      if (!stripePriceId) {
-        res.status(500).json({
-          success: false,
-          error: "Stripe price ID not configured",
-        } as ApiResponse);
-        return;
-      }
 
-      // Create Stripe Checkout Session
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
-        mode: "subscription",
-        customer_email: user.email,
-        line_items: [
-          {
-            price: stripePriceId,
-            quantity: 1,
-          },
-        ],
-        success_url: process.env.CHECKOUT_SUCCESS_URL!,
-        cancel_url: process.env.CHECKOUT_CANCEL_URL!,
-        metadata: {
-          userId: user.id,
-          plan: planName,
-        },
-      });
       // Create Stripe Checkout Session
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ["card"],
