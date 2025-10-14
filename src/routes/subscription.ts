@@ -126,6 +126,31 @@ router.post(
         error: "Failed to get subscription status",
       } as ApiResponse);
     }
+
+    // Get active subscription from new subscriptions table
+    const activeSubscription = await subscriptionModel.findActiveByUserId(user.id);
+
+    // Check if subscription is active
+    const hasActiveSubscription = activeSubscription !== null && activeSubscription.status === 'active';
+
+    res.json({
+      success: true,
+      subscription: {
+        status: activeSubscription?.status || 'inactive',
+        plan: activeSubscription?.planName || '',
+        endDate: activeSubscription?.currentPeriodEnd || '',
+        customerId: activeSubscription?.stripeCustomerId || '',
+        cancelAtPeriodEnd: activeSubscription?.cancelAtPeriodEnd || false,
+        subscriptionType: activeSubscription?.subscriptionType || 'stripe'
+      },
+      hasActiveSubscription
+    } as ApiResponse);
+  } catch (error) {
+    console.error('Error getting subscription status with session:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get subscription status'
+    } as ApiResponse);
   }
 );
 
@@ -183,8 +208,8 @@ router.post("/cancel", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Cancel subscription in Stripe
-    if (activeSubscription.stripeSubscriptionId) {
+    // Cancel subscription based on type
+    if (activeSubscription.subscriptionType === 'stripe' && activeSubscription.stripeSubscriptionId) {
       try {
         await stripe.subscriptions.update(
           activeSubscription.stripeSubscriptionId,
@@ -195,6 +220,9 @@ router.post("/cancel", async (req: Request, res: Response): Promise<void> => {
         console.error("❌ Error cancelling Stripe subscription:", stripeError);
         // Continue with local cancellation even if Stripe fails
       }
+    } else if (activeSubscription.subscriptionType === 'apple_iap') {
+      // For Apple IAP, we can only cancel locally since Apple manages the subscription
+      console.log('🍎 Apple IAP subscription - cancelling locally only');
     }
 
     // Cancel subscription in database

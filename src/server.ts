@@ -3,22 +3,23 @@ import dotenv from "dotenv";
 // Load environment variables FIRST before any other imports
 dotenv.config();
 
-import express, { Request, Response, NextFunction, Express } from "express";
-import cors from "cors";
-import helmet from "helmet";
-import rateLimit from "express-rate-limit";
-import authRoutes from "./routes/auth.js";
-import subscriptionRoutes from "./routes/subscription.js";
-import connectionRoutes from "./routes/connection.js";
-import desktopAuthRoutes from "./routes/desktop-auth.js";
-import stripe from "./config/stripe.js";
-import "./config/firebase.js"; // Initialize Firebase
-import User from "./models/User.js";
-import Subscription from "./models/Subscription.js";
-import type Stripe from "stripe";
+import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import authRoutes from './routes/auth.js';
+import subscriptionRoutes from './routes/subscription.js';
+import connectionRoutes from './routes/connection.js';
+import desktopAuthRoutes from './routes/desktop-auth.js';
+import appleIAPRoutes from './routes/apple-iap.js';
+import stripe from './config/stripe.js';
+import './config/firebase.js'; // Initialize Firebase
+import User from './models/User.js';
+import Subscription from './models/Subscription.js';
+import type Stripe from 'stripe';
 
-const app: Express = express();
-const PORT = parseInt(process.env.PORT || "3001", 10);
+const app = express();
+const PORT = parseInt(process.env.PORT || '3001', 10);
 
 // Trust proxy for local tunnel
 app.set("trust proxy", 1);
@@ -369,10 +370,11 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // API routes
-app.use("/api/auth", authRoutes);
-app.use("/api/subscription", subscriptionRoutes);
-app.use("/api/connection", connectionRoutes);
-app.use("/api/desktop-auth", desktopAuthRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/subscription', subscriptionRoutes);
+app.use('/api/connection', connectionRoutes);
+app.use('/api/desktop-auth', desktopAuthRoutes);
+app.use('/api/apple-iap', appleIAPRoutes);
 
 // Health check endpoint
 app.get("/health", async (_req: Request, res: Response): Promise<void> => {

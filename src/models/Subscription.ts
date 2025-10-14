@@ -1,6 +1,12 @@
 import prisma from '../config/prisma.js';
 import type { Subscription as PrismaSubscription } from '@prisma/client';
 import type { CreateSubscriptionData, UpdateSubscriptionData } from '../types/index.js';
+import type { 
+  SubscriptionCreateData, 
+  SubscriptionWhereUnique, 
+  SubscriptionWhere,
+  SubscriptionWithAppleIAP 
+} from '../types/subscription-types.js';
 
 /**
  * Subscription Model - Manages user subscriptions
@@ -10,27 +16,34 @@ class Subscription {
   /**
    * Create a new subscription
    */
-  async create(subscriptionData: CreateSubscriptionData): Promise<PrismaSubscription> {
+  async create(subscriptionData: CreateSubscriptionData): Promise<SubscriptionWithAppleIAP> {
     try {
+      const createData: SubscriptionCreateData = {
+        userId: subscriptionData.userId,
+        subscriptionType: subscriptionData.subscriptionType || 'stripe',
+        stripeCustomerId: subscriptionData.stripeCustomerId,
+        stripeSubscriptionId: subscriptionData.stripeSubscriptionId,
+        appleTransactionId: subscriptionData.appleTransactionId,
+        appleOriginalTransactionId: subscriptionData.appleOriginalTransactionId,
+        appleProductId: subscriptionData.appleProductId,
+        appleEnvironment: subscriptionData.appleEnvironment,
+        status: subscriptionData.status || 'active',
+        planId: subscriptionData.planId,
+        planName: subscriptionData.planName,
+        priceAmount: subscriptionData.priceAmount,
+        priceCurrency: subscriptionData.priceCurrency || 'USD',
+        billingPeriod: subscriptionData.billingPeriod,
+        currentPeriodStart: subscriptionData.currentPeriodStart,
+        currentPeriodEnd: subscriptionData.currentPeriodEnd,
+        cancelAtPeriodEnd: subscriptionData.cancelAtPeriodEnd || false
+      };
+
       const subscription = await prisma.subscription.create({
-        data: {
-          userId: subscriptionData.userId,
-          stripeCustomerId: subscriptionData.stripeCustomerId,
-          stripeSubscriptionId: subscriptionData.stripeSubscriptionId,
-          status: subscriptionData.status || 'active',
-          planId: subscriptionData.planId,
-          planName: subscriptionData.planName,
-          priceAmount: subscriptionData.priceAmount,
-          priceCurrency: subscriptionData.priceCurrency || 'USD',
-          billingPeriod: subscriptionData.billingPeriod,
-          currentPeriodStart: subscriptionData.currentPeriodStart,
-          currentPeriodEnd: subscriptionData.currentPeriodEnd,
-          cancelAtPeriodEnd: subscriptionData.cancelAtPeriodEnd || false
-        },
+        data: createData as any, // Type assertion needed due to Prisma type generation issue
         include: {
           user: true
         }
-      });
+      }) as unknown as SubscriptionWithAppleIAP;
 
       console.log('✅ Subscription created successfully:', subscription.id);
       return subscription;
@@ -64,6 +77,36 @@ class Subscription {
       });
     } catch (error) {
       console.error('❌ Failed to find subscription by Stripe ID:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Find subscription by Apple transaction ID
+   */
+  async findByAppleTransactionId(appleTransactionId: string): Promise<SubscriptionWithAppleIAP | null> {
+    try {
+      const whereCondition: SubscriptionWhereUnique = { appleTransactionId };
+      return await prisma.subscription.findUnique({
+        where: whereCondition as any // Type assertion needed due to Prisma type generation issue
+      }) as SubscriptionWithAppleIAP | null;
+    } catch (error) {
+      console.error('❌ Failed to find subscription by Apple transaction ID:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Find subscription by Apple original transaction ID
+   */
+  async findByAppleOriginalTransactionId(appleOriginalTransactionId: string): Promise<SubscriptionWithAppleIAP | null> {
+    try {
+      const whereCondition: SubscriptionWhere = { appleOriginalTransactionId };
+      return await prisma.subscription.findFirst({
+        where: whereCondition as any // Type assertion needed due to Prisma type generation issue
+      }) as SubscriptionWithAppleIAP | null;
+    } catch (error) {
+      console.error('❌ Failed to find subscription by Apple original transaction ID:', error);
       throw error;
     }
   }
