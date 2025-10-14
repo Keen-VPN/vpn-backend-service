@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.js';
 import subscriptionRoutes from './routes/subscription.js';
 import connectionRoutes from './routes/connection.js';
 import desktopAuthRoutes from './routes/desktop-auth.js';
+import appleIAPRoutes from './routes/apple-iap.js';
 import stripe from './config/stripe.js';
 import './config/firebase.js'; // Initialize Firebase
 import User from './models/User.js';
@@ -313,6 +314,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/connection', connectionRoutes);
 app.use('/api/desktop-auth', desktopAuthRoutes);
+app.use('/api/apple-iap', appleIAPRoutes);
 
 // Health check endpoint
 app.get('/health', async (_req: Request, res: Response): Promise<void> => {

@@ -26,8 +26,13 @@ export interface UpdateUserData {
 // Subscription related types
 export interface CreateSubscriptionData {
   userId: string;
+  subscriptionType?: 'stripe' | 'apple_iap';
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  appleTransactionId?: string;
+  appleOriginalTransactionId?: string;
+  appleProductId?: string;
+  appleEnvironment?: 'Sandbox' | 'Production';
   status?: 'active' | 'inactive' | 'cancelled' | 'past_due' | 'trialing';
   planId?: string;
   planName?: string;
@@ -40,8 +45,13 @@ export interface CreateSubscriptionData {
 }
 
 export interface UpdateSubscriptionData {
+  subscriptionType?: 'stripe' | 'apple_iap';
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  appleTransactionId?: string;
+  appleOriginalTransactionId?: string;
+  appleProductId?: string;
+  appleEnvironment?: 'Sandbox' | 'Production';
   status?: 'active' | 'inactive' | 'cancelled' | 'past_due' | 'trialing';
   planId?: string;
   planName?: string;
@@ -138,6 +148,25 @@ export interface SessionTokenPayload {
   userId: string;
   email: string;
   provider: 'google' | 'apple' | 'firebase' | 'demo';
+}
+
+// Apple IAP types
+export interface AppleIAPReceipt {
+  transactionId: string;
+  originalTransactionId: string;
+  productId: string;
+  environment: 'Sandbox' | 'Production';
+  expiresDateMs?: string;
+  purchaseDateMs: string;
+  quantity?: number;
+}
+
+export interface LinkAppleIAPRequest {
+  sessionToken: string;
+  receiptData: string; // Base64 encoded receipt
+  transactionId: string;
+  originalTransactionId: string;
+  productId: string;
 }
 
 // Stripe webhook event types
