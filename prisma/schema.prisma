@@ -59,22 +59,38 @@ model Subscription {
   @@map("subscriptions")
 }
 
+// ========================================
+// ENUMS
+// ========================================
+enum TerminationReason {
+  USER_TERMINATION @map("user_termination")
+  CONNECTION_LOST  @map("connection_lost")
+
+  @@map("termination_reason")
+}
+
+// ========================================
+// CONNECTION SESSION MODEL
+// ========================================
 model ConnectionSession {
-  id               String    @id @default(uuid())
-  userId           String    @map("user_id")
-  sessionStart     DateTime  @map("session_start")
-  sessionEnd       DateTime? @map("session_end")
-  durationSeconds  Int       @default(0) @map("duration_seconds")
-  serverLocation   String?   @map("server_location")
-  serverAddress    String?   @map("server_address")
-  platform         String
-  appVersion       String?   @map("app_version")
-  bytesTransferred BigInt    @default(0) @map("bytes_transferred")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
-  isAnonymized     Boolean   @default(false) @map("is_anonymized")
-  subscriptionTier String?   @map("subscription_tier")
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String            @id @default(uuid())
+  userId            String            @map("user_id")
+  sessionStart      DateTime          @map("session_start")
+  sessionEnd        DateTime?         @map("session_end")
+  durationSeconds   Int               @default(0) @map("duration_seconds")
+  serverLocation    String?           @map("server_location") // 'US', 'Nigeria', etc.
+  serverAddress     String?           @map("server_address") // IP address of VPN server (for troubleshooting only)
+  platform          String // 'macOS', 'iOS', 'Android', 'Web'
+  appVersion        String?           @map("app_version")
+  bytesTransferred  BigInt            @default(0) @map("bytes_transferred")
+  subscriptionTier  String?           @map("subscription_tier") // 'free', 'basic', 'premium'
+  terminationReason TerminationReason @default(USER_TERMINATION) @map("termination_reason")
+  isAnonymized      Boolean           @default(false) @map("is_anonymized") // Privacy flag
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([sessionStart])
@@ -82,6 +98,7 @@ model ConnectionSession {
   @@index([durationSeconds])
   @@index([platform])
   @@index([serverLocation])
+  @@index([terminationReason])
   @@index([createdAt])
   @@index([isAnonymized])
   @@index([subscriptionTier])
