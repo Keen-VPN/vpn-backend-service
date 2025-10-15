@@ -26,14 +26,14 @@ export interface UpdateUserData {
 // Subscription related types
 export interface CreateSubscriptionData {
   userId: string;
-  subscriptionType?: 'stripe' | 'apple_iap';
+  subscriptionType?: "stripe" | "apple_iap";
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   appleTransactionId?: string;
   appleOriginalTransactionId?: string;
   appleProductId?: string;
-  appleEnvironment?: 'Sandbox' | 'Production';
-  status?: 'active' | 'inactive' | 'cancelled' | 'past_due' | 'trialing';
+  appleEnvironment?: "Sandbox" | "Production";
+  status?: "active" | "inactive" | "cancelled" | "past_due" | "trialing";
   planId?: string;
   planName?: string;
   priceAmount?: number;
@@ -45,14 +45,14 @@ export interface CreateSubscriptionData {
 }
 
 export interface UpdateSubscriptionData {
-  subscriptionType?: 'stripe' | 'apple_iap';
+  subscriptionType?: "stripe" | "apple_iap";
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   appleTransactionId?: string;
   appleOriginalTransactionId?: string;
   appleProductId?: string;
-  appleEnvironment?: 'Sandbox' | 'Production';
-  status?: 'active' | 'inactive' | 'cancelled' | 'past_due' | 'trialing';
+  appleEnvironment?: "Sandbox" | "Production";
+  status?: "active" | "inactive" | "cancelled" | "past_due" | "trialing";
   planId?: string;
   planName?: string;
   priceAmount?: number;
@@ -66,6 +66,7 @@ export interface UpdateSubscriptionData {
 
 // Connection Session related types
 export type TerminationReason = "USER_TERMINATION" | "CONNECTION_LOST";
+export type EventType = "SESSION_START" | "HEARTBEAT" | "SESSION_END";
 
 export interface CreateConnectionSessionData {
   userId: string;
@@ -79,12 +80,16 @@ export interface CreateConnectionSessionData {
   bytesTransferred?: bigint | number;
   subscriptionTier?: string | null;
   terminationReason?: TerminationReason;
+  eventType?: EventType;
+  heartbeatTimestamp?: Date | null;
 }
 
 export interface UpdateConnectionSessionData {
   sessionEnd?: Date;
   durationSeconds?: number;
   bytesTransferred?: bigint | number;
+  eventType?: EventType;
+  heartbeatTimestamp?: Date | null;
 }
 
 export interface ConnectionSessionQueryOptions {
@@ -164,7 +169,7 @@ export interface AppleIAPReceipt {
   transactionId: string;
   originalTransactionId: string;
   productId: string;
-  environment: 'Sandbox' | 'Production';
+  environment: "Sandbox" | "Production";
   expiresDateMs?: string;
   purchaseDateMs: string;
   quantity?: number;

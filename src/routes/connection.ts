@@ -1,7 +1,11 @@
 import express, { Request, Response, Router } from "express";
 import User from "../models/User.js";
 import ConnectionSession from "../models/ConnectionSession.js";
-import type { ApiResponse, TerminationReason } from "../types/index.js";
+import type {
+  ApiResponse,
+  TerminationReason,
+  EventType,
+} from "../types/index.js";
 
 const router: Router = express.Router();
 
@@ -21,10 +25,18 @@ router.post("/session", async (req: Request, res: Response): Promise<void> => {
       subscription_tier,
       bytes_transferred,
       termination_reason,
+      event_type,
+      heartbeat_timestamp,
     } = req.body;
 
     // Validate required fields
     if (!session_start || !duration_seconds || !platform) {
+      console.error("❌ Invalid payload - Missing required fields:", {
+        session_start: !!session_start,
+        duration_seconds: !!duration_seconds,
+        platform: !!platform,
+        received_body: JSON.stringify(req.body),
+      });
       res.status(400).json({
         success: false,
         error:
@@ -38,10 +50,68 @@ router.post("/session", async (req: Request, res: Response): Promise<void> => {
       termination_reason &&
       !["USER_TERMINATION", "CONNECTION_LOST"].includes(termination_reason)
     ) {
+      console.error("❌ Invalid payload - Invalid termination_reason:", {
+        provided_value: termination_reason,
+        allowed_values: ["USER_TERMINATION", "CONNECTION_LOST"],
+        received_body: JSON.stringify(req.body),
+      });
       res.status(400).json({
         success: false,
         error:
           'Invalid termination_reason. Must be either "USER_TERMINATION" or "CONNECTION_LOST"',
+      } as ApiResponse);
+      return;
+    }
+
+    // Validate event_type if provided
+    if (
+      event_type &&
+      !["SESSION_START", "HEARTBEAT", "SESSION_END"].includes(event_type)
+    ) {
+      console.error("❌ Invalid payload - Invalid event_type:", {
+        provided_value: event_type,
+        allowed_values: ["SESSION_START", "HEARTBEAT", "SESSION_END"],
+        received_body: JSON.stringify(req.body),
+      });
+      res.status(400).json({
+        success: false,
+        error:
+          'Invalid event_type. Must be one of: "SESSION_START", "HEARTBEAT", "SESSION_END"',
+      } as ApiResponse);
+      return;
+    }
+
+    // Validate heartbeat_timestamp for heartbeat events
+    if (event_type === "HEARTBEAT" && !heartbeat_timestamp) {
+      console.error(
+        "❌ Invalid payload - Missing heartbeat_timestamp for HEARTBEAT event:",
+        {
+          event_type: event_type,
+          heartbeat_timestamp: heartbeat_timestamp,
+          received_body: JSON.stringify(req.body),
+        }
+      );
+      res.status(400).json({
+        success: false,
+        error: 'heartbeat_timestamp is required when event_type is "HEARTBEAT"',
+      } as ApiResponse);
+      return;
+    }
+
+    // Validate heartbeat_timestamp format if provided
+    if (heartbeat_timestamp && isNaN(new Date(heartbeat_timestamp).getTime())) {
+      console.error(
+        "❌ Invalid payload - Invalid heartbeat_timestamp format:",
+        {
+          provided_value: heartbeat_timestamp,
+          expected_format: "ISO 8601 date string",
+          received_body: JSON.stringify(req.body),
+        }
+      );
+      res.status(400).json({
+        success: false,
+        error:
+          "Invalid heartbeat_timestamp format. Must be a valid ISO 8601 date string",
       } as ApiResponse);
       return;
     }
@@ -92,10 +162,18 @@ router.post("/session", async (req: Request, res: Response): Promise<void> => {
       subscriptionTier: subscription_tier || "free",
       terminationReason:
         (termination_reason as TerminationReason) || "USER_TERMINATION", // Default to user termination if not provided
+      eventType: (event_type as EventType) || "SESSION_START", // Default to session start if not provided
+      heartbeatTimestamp: heartbeat_timestamp
+        ? new Date(heartbeat_timestamp)
+        : null,
     });
 
     console.log(
-      `✅ Connection session recorded for user ${user.id}: ${duration_seconds}s on ${platform}`
+      `✅ Connection session recorded for user ${
+        user.id
+      }: ${duration_seconds}s on ${platform} (event: ${
+        event_type || "SESSION_START"
+      })`
     );
 
     res.json({
@@ -104,6 +182,7 @@ router.post("/session", async (req: Request, res: Response): Promise<void> => {
         session_id: session.id,
         duration_seconds: duration_seconds,
         platform: platform,
+        event_type: event_type || "SESSION_START",
         user_associated: true,
       },
     } as ApiResponse);
