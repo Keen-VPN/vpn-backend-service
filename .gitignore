@@ -37,3 +37,6 @@ temp/
 
 # Build
 build/
+
+# Cursor rules
+.cursorrules
