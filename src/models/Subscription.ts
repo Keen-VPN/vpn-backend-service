@@ -69,11 +69,13 @@ class Subscription {
 
   /**
    * Find subscription by Stripe subscription ID
+   * Note: Since stripeSubscriptionId is no longer unique, this returns the first match
    */
   async findByStripeSubscriptionId(stripeSubscriptionId: string): Promise<PrismaSubscription | null> {
     try {
-      return await prisma.subscription.findUnique({
-        where: { stripeSubscriptionId }
+      return await prisma.subscription.findFirst({
+        where: { stripeSubscriptionId },
+        orderBy: { createdAt: 'desc' }
       });
     } catch (error) {
       console.error('❌ Failed to find subscription by Stripe ID:', error);
@@ -183,19 +185,21 @@ class Subscription {
 
   /**
    * Update subscription by Stripe subscription ID
+   * Note: Since stripeSubscriptionId is no longer unique, this updates the first match
    */
   async updateByStripeId(
     stripeSubscriptionId: string,
     updateData: UpdateSubscriptionData
   ): Promise<PrismaSubscription> {
     try {
-      const subscription = await prisma.subscription.update({
-        where: { stripeSubscriptionId },
-        data: updateData
-      });
+      // First find the subscription
+      const subscription = await this.findByStripeSubscriptionId(stripeSubscriptionId);
+      if (!subscription) {
+        throw new Error(`Subscription not found for Stripe ID: ${stripeSubscriptionId}`);
+      }
 
-      console.log('✅ Subscription updated successfully:', subscription.id);
-      return subscription;
+      // Update by ID
+      return await this.update(subscription.id, updateData);
     } catch (error) {
       console.error('❌ Failed to update subscription by Stripe ID:', error);
       throw error;

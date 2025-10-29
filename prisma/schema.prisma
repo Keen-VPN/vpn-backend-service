@@ -129,3 +129,25 @@ model SessionAggregate {
   @@index([subscriptionTier])
   @@map("session_aggregates")
 }
+
+model ProcessedSession {
+  id                      String   @id @default(uuid())
+  sessionId               String   @unique @map("session_id") // Reference to ConnectionSession.id
+  userId                  String   @map("user_id")
+  dataConsumed            Decimal  @map("data_consumed") @db.Decimal(15, 2) // In KB
+  averageSessionBandwidth Decimal  @map("average_session_bandwidth") @db.Decimal(15, 2) // In KB/sec
+  sessionDuration         Decimal  @map("session_duration") @db.Decimal(10, 2) // In minutes
+  startedAt               DateTime @map("started_at") @db.Timestamptz
+  endedAt                 DateTime @map("ended_at") @db.Timestamptz
+  terminationReason       String   @map("termination_reason")
+  serverLocation          String?  @map("server_location")
+  processedAt             DateTime @default(now()) @map("processed_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([startedAt])
+  @@index([endedAt])
+  @@index([serverLocation])
+  @@index([terminationReason])
+  @@index([processedAt])
+  @@map("processed_sessions")
+}
