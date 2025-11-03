@@ -49,13 +49,27 @@ class TunnelManager {
 
       // Handle tunnel output - simplified approach (no URL parsing)
       return new Promise((resolve, reject) => {
+        let isResolved = false;
+        const resolveOnce = (value: string) => {
+          if (!isResolved) {
+            isResolved = true;
+            resolve(value);
+          }
+        };
+        const rejectOnce = (error: Error) => {
+          if (!isResolved) {
+            isResolved = true;
+            reject(error);
+          }
+        };
+
         // Give tunnel 3 seconds to start, then assume success
         const successTimeout = setTimeout(() => {
           const expectedUrl = this.config.subdomain
             ? `https://${this.config.subdomain}.tunn.dev`
             : "https://your-subdomain.tunn.dev";
           console.log(`✅ Tunnel started successfully: ${expectedUrl}`);
-          resolve(expectedUrl);
+          resolveOnce(expectedUrl);
         }, 3000);
 
         this.tunnelProcess!.stdout?.on("data", (data: Buffer) => {
@@ -80,7 +94,7 @@ class TunnelManager {
             console.error("💡 Install tunnelto: run ./scripts/setup-tunnel.sh");
           }
 
-          reject(error);
+          rejectOnce(error);
         });
 
         this.tunnelProcess!.on(
@@ -92,9 +106,16 @@ class TunnelManager {
             );
             this.tunnelProcess = null;
 
-            // If tunnel exits immediately, it's likely an error
-            if (code !== 0) {
-              reject(new Error(`Tunnel exited with code ${code}`));
+            if (code === 0) {
+              // Successful exit - resolve if not already resolved
+              const expectedUrl = this.config.subdomain
+                ? `https://${this.config.subdomain}.tunn.dev`
+                : "https://your-subdomain.tunn.dev";
+              console.log(`✅ Tunnel started successfully: ${expectedUrl}`);
+              resolveOnce(expectedUrl);
+            } else {
+              // Non-zero exit code - reject if not already resolved
+              rejectOnce(new Error(`Tunnel exited with code ${code}`));
             }
           }
         );
