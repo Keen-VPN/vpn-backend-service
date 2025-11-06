@@ -3,23 +3,27 @@ import dotenv from "dotenv";
 // Load environment variables FIRST before any other imports
 dotenv.config();
 
-import express, { Request, Response, NextFunction } from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
-import authRoutes from './routes/auth.js';
-import subscriptionRoutes from './routes/subscription.js';
-import connectionRoutes from './routes/connection.js';
-import desktopAuthRoutes from './routes/desktop-auth.js';
-import appleIAPRoutes from './routes/apple-iap.js';
-import stripe from './config/stripe.js';
-import './config/firebase.js'; // Initialize Firebase
-import User from './models/User.js';
-import Subscription from './models/Subscription.js';
-import type Stripe from 'stripe';
+import express, { Request, Response, NextFunction } from "express";
+import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import authRoutes from "./routes/auth.js";
+import subscriptionRoutes from "./routes/subscription.js";
+import connectionRoutes from "./routes/connection.js";
+import desktopAuthRoutes from "./routes/desktop-auth.js";
+import appleIAPRoutes from "./routes/apple-iap.js";
+import stripe from "./config/stripe.js";
+import "./config/firebase.js"; // Initialize Firebase
+import User from "./models/User.js";
+import Subscription from "./models/Subscription.js";
+import type Stripe from "stripe";
+import { createTunnelManager } from "./utils/tunnel.js";
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3001', 10);
+const PORT = parseInt(process.env.PORT || "3001", 10);
+
+// Initialize tunnel manager
+const tunnelManager = createTunnelManager();
 
 // Trust proxy for local tunnel
 app.set("trust proxy", 1);
@@ -370,11 +374,11 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/subscription', subscriptionRoutes);
-app.use('/api/connection', connectionRoutes);
-app.use('/api/desktop-auth', desktopAuthRoutes);
-app.use('/api/apple-iap', appleIAPRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/subscription", subscriptionRoutes);
+app.use("/api/connection", connectionRoutes);
+app.use("/api/desktop-auth", desktopAuthRoutes);
+app.use("/api/apple-iap", appleIAPRoutes);
 
 // Health check endpoint
 app.get("/health", async (_req: Request, res: Response): Promise<void> => {
@@ -549,12 +553,39 @@ async function startServer(): Promise<void> {
   try {
     console.log("🔄 Initializing server...");
 
+    // Start tunnelto.dev tunnel if enabled
+    let tunnelUrl: string | null = null;
+    if (tunnelManager.getConfig().enabled) {
+      try {
+        tunnelUrl = await tunnelManager.start();
+      } catch (error) {
+        console.error("⚠️ Failed to start tunnel (continuing without):", error);
+      }
+    }
+
     // Start Express server
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
       console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-      console.log(`🌐 Network access: http://0.0.0.0:${PORT}`);
+      console.log(`🌐 Local network: http://0.0.0.0:${PORT}`);
+
+      if (tunnelUrl) {
+        console.log(`🌍 Public tunnel: ${tunnelUrl}`);
+        console.log(`📡 Webhook URL: ${tunnelUrl}/api/subscription/webhook`);
+      } else if (tunnelManager.getConfig().enabled) {
+        console.log(
+          `🔧 Tunnel enabled but failed to start. Run: ./scripts/setup-tunnel.sh`
+        );
+      }
+
+      console.log("");
+      console.log("🛠️  Development URLs:");
+      console.log(`   Local:  http://localhost:${PORT}`);
+      if (tunnelUrl) {
+        console.log(`   Tunnel: ${tunnelUrl}`);
+      }
+      console.log("");
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error);
@@ -565,11 +596,13 @@ async function startServer(): Promise<void> {
 // Graceful shutdown
 process.on("SIGTERM", async () => {
   console.log("🛑 SIGTERM received, shutting down gracefully");
+  tunnelManager.stop();
   process.exit(0);
 });
 
 process.on("SIGINT", async () => {
   console.log("🛑 SIGINT received, shutting down gracefully");
+  tunnelManager.stop();
   process.exit(0);
 });
 
