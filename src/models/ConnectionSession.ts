@@ -4,6 +4,7 @@ import type {
   UpdateConnectionSessionData,
   ConnectionSessionQueryOptions,
   ConnectionStats,
+  EventType,
 } from "../types/index.js";
 
 // Type alias for ConnectionSession from Prisma (non-nullable version)
@@ -46,6 +47,8 @@ class ConnectionSession {
           subscriptionTier: sessionData.subscriptionTier || "free",
           terminationReason:
             sessionData.terminationReason || "USER_TERMINATION",
+          eventType: sessionData.eventType || "SESSION_START",
+          heartbeatTimestamp: sessionData.heartbeatTimestamp || null,
           isAnonymized: false,
         },
         include: {
@@ -224,6 +227,8 @@ class ConnectionSession {
         sessionEnd?: Date;
         durationSeconds?: number;
         bytesTransferred?: bigint;
+        eventType?: EventType;
+        heartbeatTimestamp?: Date | null;
       } = {};
 
       // Copy over fields with proper type handling
@@ -235,6 +240,12 @@ class ConnectionSession {
       }
       if (updateData.bytesTransferred !== undefined) {
         data.bytesTransferred = BigInt(updateData.bytesTransferred);
+      }
+      if (updateData.eventType !== undefined) {
+        data.eventType = updateData.eventType;
+      }
+      if (updateData.heartbeatTimestamp !== undefined) {
+        data.heartbeatTimestamp = updateData.heartbeatTimestamp;
       }
 
       const session = await prisma.connectionSession.update({
