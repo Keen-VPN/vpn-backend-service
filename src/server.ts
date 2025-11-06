@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 // Load environment variables FIRST before any other imports
 dotenv.config();
 
-import express, { Request, Response, NextFunction } from "express";
+import express, { Express, Request, Response, NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -19,7 +19,7 @@ import Subscription from "./models/Subscription.js";
 import type Stripe from "stripe";
 import { createTunnelManager } from "./utils/tunnel.js";
 
-const app = express();
+const app: Express = express();
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
 // Initialize tunnel manager
