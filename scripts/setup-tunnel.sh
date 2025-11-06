@@ -45,8 +45,8 @@ if [[ -f .env ]]; then
         echo "📝 Adding tunnel configuration to .env..."
         echo "" >> .env
         echo "# Tunnelto.dev Configuration" >> .env
-        echo "TUNNELTO_SUBDOMAIN=keenvpn-dev-$(whoami)" >> .env
-        echo "TUNNELTO_PORT=3001" >> .env
+        echo "TUNNELTO_SUBDOMAIN=keenvpn-$(whoami)" >> .env
+        echo "TUNNELTO_PORT=3003" >> .env
         echo "TUNNELTO_ENABLED=true" >> .env
     fi
 else
