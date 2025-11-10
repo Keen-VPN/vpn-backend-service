@@ -165,17 +165,19 @@ router.post('/link-purchase', async (req: Request, res: Response): Promise<void>
         // Same user - check if subscription needs to be reactivated
         // If subscription is inactive but IAP is still valid, reactivate and update dates
         const now = new Date();
-        const existingExpiresDate = existingSubscription.currentPeriodEnd;
-        const isExpired = existingExpiresDate && new Date(existingExpiresDate) < now;
+        const existingExpiresDate = existingSubscription.currentPeriodEnd ? new Date(existingSubscription.currentPeriodEnd) : null;
+        const isExpired = existingExpiresDate ? existingExpiresDate < now : false;
         
         // Calculate new expiration date from IAP (if we have purchase data)
-        let newExpiresDate = existingExpiresDate;
+        let newExpiresDate: Date | null = existingExpiresDate;
         if (purchase?.expires_date_ms) {
-          newExpiresDate = new Date(parseInt(purchase.expires_date_ms));
+          newExpiresDate = new Date(parseInt(purchase.expires_date_ms, 10));
         } else if (!existingExpiresDate || isExpired) {
           // Default to 1 year from now if no date available
           newExpiresDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
         }
+
+        const shouldUpdateEndDate = !existingExpiresDate || isExpired || (newExpiresDate && existingExpiresDate && newExpiresDate > existingExpiresDate);
         
         // If subscription exists but is inactive, always reactivate it
         // Since the client is calling this endpoint with an active IAP, we should reactivate
@@ -186,7 +188,7 @@ router.post('/link-purchase', async (req: Request, res: Response): Promise<void>
           };
           
           // Update end date if it's expired, missing, or we have a better date from purchase
-          if (!existingExpiresDate || isExpired || (newExpiresDate > existingExpiresDate)) {
+          if (shouldUpdateEndDate && newExpiresDate) {
             updateData.currentPeriodEnd = newExpiresDate;
             console.log(`📅 Updating subscription end date to: ${newExpiresDate.toISOString()}`);
           }
@@ -244,16 +246,18 @@ router.post('/link-purchase', async (req: Request, res: Response): Promise<void>
         
         // Calculate new expiration date from IAP (if we have purchase data)
         const now = new Date();
-        const existingExpiresDate = originalSubscription.currentPeriodEnd;
-        const isExpired = existingExpiresDate && new Date(existingExpiresDate) < now;
+        const existingExpiresDate = originalSubscription.currentPeriodEnd ? new Date(originalSubscription.currentPeriodEnd) : null;
+        const isExpired = existingExpiresDate ? existingExpiresDate < now : false;
         
-        let newExpiresDate = existingExpiresDate;
+        let newExpiresDate: Date | null = existingExpiresDate;
         if (purchase?.expires_date_ms) {
-          newExpiresDate = new Date(parseInt(purchase.expires_date_ms));
+          newExpiresDate = new Date(parseInt(purchase.expires_date_ms, 10));
         } else if (!existingExpiresDate || isExpired) {
           // Default to 1 year from now if no date available
           newExpiresDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
         }
+
+        const shouldUpdateEndDate = !existingExpiresDate || isExpired || (newExpiresDate && existingExpiresDate && newExpiresDate > existingExpiresDate);
         
         // Update the original subscription: transfer to current user and reactivate
         const updateData: any = {
@@ -262,7 +266,7 @@ router.post('/link-purchase', async (req: Request, res: Response): Promise<void>
         };
         
         // Update end date if it's expired, missing, or we have a better date from purchase
-        if (!existingExpiresDate || isExpired || (newExpiresDate > existingExpiresDate)) {
+        if (shouldUpdateEndDate && newExpiresDate) {
           updateData.currentPeriodEnd = newExpiresDate;
           console.log(`📅 Updating subscription end date to: ${newExpiresDate.toISOString()}`);
         }
@@ -305,15 +309,17 @@ router.post('/link-purchase', async (req: Request, res: Response): Promise<void>
       if (existingByOriginalId.userId === user.id) {
         // Same user - same logic as transactionId check
         const now = new Date();
-        const existingExpiresDate = existingByOriginalId.currentPeriodEnd;
-        const isExpired = existingExpiresDate && new Date(existingExpiresDate) < now;
+        const existingExpiresDate = existingByOriginalId.currentPeriodEnd ? new Date(existingByOriginalId.currentPeriodEnd) : null;
+        const isExpired = existingExpiresDate ? existingExpiresDate < now : false;
         
-        let newExpiresDate = existingExpiresDate;
+        let newExpiresDate: Date | null = existingExpiresDate;
         if (purchase?.expires_date_ms) {
-          newExpiresDate = new Date(parseInt(purchase.expires_date_ms));
+          newExpiresDate = new Date(parseInt(purchase.expires_date_ms, 10));
         } else if (!existingExpiresDate || isExpired) {
           newExpiresDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
         }
+
+        const shouldUpdateEndDate = !existingExpiresDate || isExpired || (newExpiresDate && existingExpiresDate && newExpiresDate > existingExpiresDate);
         
         if (existingByOriginalId.status === 'inactive') {
           console.log('🔄 Reactivating existing Apple IAP subscription (found by original transaction ID, status was inactive)');
@@ -322,7 +328,7 @@ router.post('/link-purchase', async (req: Request, res: Response): Promise<void>
             appleTransactionId: transactionId // Update transaction ID if missing
           };
           
-          if (!existingExpiresDate || isExpired || (newExpiresDate > existingExpiresDate)) {
+          if (shouldUpdateEndDate && newExpiresDate) {
             updateData.currentPeriodEnd = newExpiresDate;
           }
           
@@ -375,15 +381,17 @@ router.post('/link-purchase', async (req: Request, res: Response): Promise<void>
         const originalSubscription = existingByOriginalId;
         
         const now = new Date();
-        const existingExpiresDate = originalSubscription.currentPeriodEnd;
-        const isExpired = existingExpiresDate && new Date(existingExpiresDate) < now;
+        const existingExpiresDate = originalSubscription.currentPeriodEnd ? new Date(originalSubscription.currentPeriodEnd) : null;
+        const isExpired = existingExpiresDate ? existingExpiresDate < now : false;
         
-        let newExpiresDate = existingExpiresDate;
+        let newExpiresDate: Date | null = existingExpiresDate;
         if (purchase?.expires_date_ms) {
-          newExpiresDate = new Date(parseInt(purchase.expires_date_ms));
+          newExpiresDate = new Date(parseInt(purchase.expires_date_ms, 10));
         } else if (!existingExpiresDate || isExpired) {
           newExpiresDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
         }
+
+        const shouldUpdateEndDate = !existingExpiresDate || isExpired || (newExpiresDate && existingExpiresDate && newExpiresDate > existingExpiresDate);
         
         const updateData: any = {
           userId: user.id,
@@ -391,7 +399,7 @@ router.post('/link-purchase', async (req: Request, res: Response): Promise<void>
           appleTransactionId: transactionId // Update transaction ID
         };
         
-        if (!existingExpiresDate || isExpired || (newExpiresDate > existingExpiresDate)) {
+        if (shouldUpdateEndDate && newExpiresDate) {
           updateData.currentPeriodEnd = newExpiresDate;
         }
         
