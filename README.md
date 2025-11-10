@@ -47,6 +47,359 @@ npm run dev
 
 ---
 
+## 🐳 Docker Setup (Recommended)
+
+**Docker provides a unified development environment that eliminates "works on my machine" issues and ensures parity with staging/production.**
+
+### ✨ Quick Start with Docker
+
+Run the entire application with a single command:
+
+```bash
+npm run docker:setup
+```
+
+This will:
+
+- ✅ Check Docker installation
+- ✅ Create `.env` from template
+- ✅ Build Docker images
+- ✅ Start PostgreSQL database
+- ✅ Run database migrations
+- ✅ Start the API server
+
+**Your API is now running at `http://localhost:3003`**
+
+### 📋 Prerequisites
+
+- [Docker Desktop](https://docs.docker.com/get-docker/) (v20.10+)
+- [Docker Compose](https://docs.docker.com/compose/install/) (v2.0+)
+
+### 🎯 Development Modes
+
+#### Production Mode (Default)
+
+```bash
+# Start all services
+docker-compose up
+
+# Or run in background
+docker-compose up -d
+```
+
+#### Development Mode (Hot Reload)
+
+```bash
+# Start with real-time logs (recommended for development)
+npm run docker:dev
+
+```
+
+Development mode includes:
+
+- 🔥 Hot reload on code changes
+- 📂 Source code mounted as volumes
+- 🐘 pgAdmin for database management (optional)
+- 🔧 Development-optimized build
+
+### 🛠️ Docker Commands
+
+| Command                | Description                     |
+| ---------------------- | ------------------------------- |
+| `npm run docker:setup` | Initial setup and start         |
+| `npm run docker:dev`   | Start with real-time logs       |
+| `npm run docker:up`    | Start services in background    |
+| `npm run docker:down`  | Stop all services               |
+| `npm run docker:logs`  | View logs (follow mode)         |
+| `npm run docker:build` | Rebuild images                  |
+| `npm run docker:ps`    | List running containers         |
+| `npm run docker:shell` | Access API container shell      |
+| `npm run docker:db`    | Access PostgreSQL shell         |
+| `npm run docker:clean` | Remove all containers & volumes |
+
+### 📦 What's Included
+
+```
+Docker Environment:
+├── API Server       → localhost:3003
+├── PostgreSQL       → localhost:5432
+└── pgAdmin (dev)    → localhost:5050
+```
+
+### ⚙️ Configuration
+
+1. **Create `.env` file**:
+
+```bash
+cp env.docker.example .env
+```
+
+2. **Edit `.env` with your credentials**:
+
+```env
+# Database (auto-configured for Docker)
+POSTGRES_USER=keenvpn
+POSTGRES_PASSWORD=keenvpn_dev_password
+POSTGRES_DB=keenvpn
+
+# Firebase
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+FIREBASE_CLIENT_EMAIL=your-email@project.iam.gserviceaccount.com
+
+# Stripe
+STRIPE_SECRET_KEY=sk_test_your_key
+STRIPE_WEBHOOK_SECRET=whsec_your_secret
+STRIPE_PRICE_ID=price_your_price_id
+
+# JWT
+JWT_SECRET=your_jwt_secret_min_32_characters_long
+```
+
+3. **Start the application**:
+
+```bash
+docker-compose up
+```
+
+### 🔧 Common Tasks
+
+#### View API Logs
+
+```bash
+docker-compose logs -f api
+```
+
+#### Run Database Migrations
+
+Migrations run automatically on container start. To run manually:
+
+```bash
+docker-compose exec api npx prisma migrate deploy
+```
+
+#### Access Database
+
+```bash
+# Via psql
+npm run docker:db
+
+# Via pgAdmin (development mode only)
+# Open http://localhost:5050
+# Email: admin@keenvpn.local
+# Password: admin
+```
+
+#### Prisma Studio (Database GUI)
+
+```bash
+# From your host machine (requires local Node.js)
+npm run prisma:studio
+
+# Or from inside the container
+docker-compose exec api npx prisma studio
+```
+
+#### Reset Database
+
+```bash
+# Stop containers and remove volumes
+docker-compose down -v
+
+# Start fresh
+docker-compose up -d
+```
+
+#### Shell Access
+
+```bash
+# API container
+npm run docker:shell
+
+# PostgreSQL container
+docker-compose exec postgres sh
+```
+
+### 🔍 Troubleshooting
+
+#### Port Already in Use
+
+```bash
+# Check what's using port 3003
+lsof -i :3003
+
+# Stop conflicting service or change port in .env
+PORT=3002
+```
+
+#### Database Connection Failed
+
+```bash
+# Check if PostgreSQL is healthy
+docker-compose ps
+
+# View PostgreSQL logs
+docker-compose logs postgres
+
+# Verify DATABASE_URL in .env matches docker-compose.yml
+DATABASE_URL=postgresql://keenvpn:keenvpn_dev_password@postgres:5432/keenvpn
+```
+
+#### Permission Denied
+
+```bash
+# Make scripts executable
+chmod +x scripts/docker-*.sh docker-entrypoint.sh
+
+# Or run with bash
+bash scripts/docker-setup.sh
+```
+
+#### Container Won't Start
+
+```bash
+# View detailed logs
+docker-compose logs api
+
+# Rebuild from scratch
+npm run docker:clean
+npm run docker:setup
+```
+
+#### "Prisma Client Not Found"
+
+```bash
+# Regenerate Prisma Client inside container
+docker-compose exec api npx prisma generate
+
+# Or rebuild the image
+docker-compose build --no-cache
+```
+
+### 🚀 Production Deployment
+
+For production, use the standard `Dockerfile` with a proper orchestration platform:
+
+**Docker Swarm**:
+
+```bash
+docker stack deploy -c docker-compose.yml keenvpn
+```
+
+**Kubernetes**:
+
+```bash
+# Generate Kubernetes manifests
+kompose convert
+
+# Deploy
+kubectl apply -f .
+```
+
+**AWS ECS/Fargate**:
+
+```bash
+# Build and push image
+docker build -t keenvpn-backend .
+docker tag keenvpn-backend:latest YOUR_ECR_REPO:latest
+docker push YOUR_ECR_REPO:latest
+```
+
+### 🔐 Security Notes
+
+- **Never commit `.env`** - it contains sensitive credentials
+- **Change default passwords** - especially `POSTGRES_PASSWORD` and `JWT_SECRET`
+- **Use secrets management** - for production (AWS Secrets Manager, HashiCorp Vault, etc.)
+- **Non-root user** - containers run as `keenvpn` user (UID 1001)
+- **Health checks** - automatic container restarts on failure
+
+### 📊 Multi-Stage Build
+
+The production `Dockerfile` uses multi-stage builds:
+
+1. **Dependencies Stage** - Install production dependencies
+2. **Builder Stage** - Compile TypeScript
+3. **Runner Stage** - Minimal production image (~150MB)
+
+Benefits:
+
+- ✅ Smaller image size
+- ✅ Faster deployments
+- ✅ Better security (no build tools in production)
+- ✅ Reproducible builds
+
+### 🌐 Docker + Tunnel (Recommended Approach)
+
+Tunnels are **disabled** in Docker by default for better performance. When you need external access (webhooks, mobile testing), start a tunnel manually:
+
+#### 1. Setup (one-time)
+
+```bash
+npm run setup:tunnel  # Install tunnelto on your host machine
+```
+
+#### 2. Start Docker API
+
+```bash
+npm run docker:up     # Start API in background
+```
+
+#### 3. Start Tunnel (when needed)
+
+```bash
+npm run tunnel:start  # Creates tunnel to Docker API on localhost:3003
+```
+
+**Benefits:**
+
+- ✅ Fast Docker startup (no tunnel overhead)
+- ✅ Tunnel only when needed (webhooks, external testing)
+- ✅ Host-based tunnel (more reliable than container-based)
+- ✅ Easy to stop/start tunnel independently
+
+### 📈 Performance Tips
+
+- Use **Docker volumes** for databases (persistent data)
+- Enable **BuildKit** for faster builds: `DOCKER_BUILDKIT=1`
+- Use **layer caching** - structure Dockerfile to maximize cache hits
+- **Limit resources** if needed:
+
+```yaml
+# docker-compose.yml
+services:
+  api:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+```
+
+### 🔄 CI/CD Integration
+
+**GitHub Actions**:
+
+```yaml
+- name: Build and test
+  run: |
+    docker-compose build
+    docker-compose up -d
+    docker-compose exec -T api npm test
+```
+
+**GitLab CI**:
+
+```yaml
+services:
+  - docker:dind
+
+script:
+  - docker-compose build
+  - docker-compose up -d
+```
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -68,6 +421,8 @@ backend/
 
 ## 🛠️ Development Commands
 
+### Standard Development
+
 ```bash
 npm run dev              # Start dev server (hot reload)
 npm run dev:tunnel       # Start with tunnelto.dev tunnel enabled
@@ -79,6 +434,27 @@ npm run prisma:studio    # Open database GUI
 npm run prisma:push      # Push schema to database
 npm run type-check       # Check TypeScript types
 ```
+
+### Docker Commands
+
+```bash
+npm run docker:setup     # Initial Docker setup and start
+npm run docker:dev       # Start with real-time logs
+npm run docker:test      # Validate Docker setup
+npm run docker:up        # Start services in background
+npm run docker:down      # Stop all services
+npm run docker:logs      # View logs (follow mode)
+npm run docker:build     # Rebuild images
+npm run docker:ps        # List running containers
+npm run docker:shell     # Access API container shell
+npm run docker:db        # Access PostgreSQL shell
+npm run docker:clean     # Complete cleanup (removes all data)
+```
+
+**📚 Docker Documentation:**
+
+- [Docker Quick Reference](docs/DOCKER-QUICK-REFERENCE.md) - Essential commands
+- [Docker Guide](DOCKER.md) - Comprehensive documentation
 
 ---
 
@@ -118,7 +494,7 @@ TUNNELTO_ENABLED=true
 TUNNELTO_SUBDOMAIN=keenvpn
 
 # Port to tunnel (matches your server port)
-TUNNELTO_PORT=3001
+TUNNELTO_PORT=3003
 ```
 
 ### 🎯 Use Cases
@@ -161,6 +537,7 @@ npm run dev:tunnel
 | `npm run dev:tunnel`    | Start server with tunnel **enabled**              |
 | `npm run dev:no-tunnel` | Start server with tunnel **disabled**             |
 | `npm run setup:tunnel`  | Install and configure tunnelto.dev                |
+| `npm run tunnel:start`  | Start tunnel manually (for Docker development)    |
 | `npm run dev`           | Start server (uses .env TUNNELTO_ENABLED setting) |
 
 ### 🔧 Troubleshooting
@@ -182,7 +559,7 @@ npm run setup:tunnel
 
 ```bash
 # Edit .env and use a unique subdomain
-TUNNELTO_SUBDOMAIN=keenvpn-dev-yourname-$(date +%s)
+TUNNELTO_SUBDOMAIN=keenvpn-yourname-$(date +%s)
 ```
 
 #### Want a custom subdomain?
@@ -220,7 +597,7 @@ When tunnel is active, you'll see:
 🔧 Use this URL for external API testing and webhooks
 
 🛠️  Development URLs:
-   Local:  http://localhost:3001
+   Local:  http://localhost:3003
    Tunnel: https://your-subdomain.tunn.dev
 ```
 
@@ -279,7 +656,8 @@ See `env.example` for complete list.
 - **TypeScript 5.3** - Full type safety
 - **Prisma 6.17** - Modern ORM
 - **Express 4.18** - Web framework
-- **PostgreSQL** - Database (Neon/Supabase)
+- **PostgreSQL** - Database (Neon/Supabase/Docker)
+- **Docker & Docker Compose** - Containerized development environment
 - **Stripe** - Payment processing
 - **JWT** - Authentication
 - **Tunnelto.dev** - Secure local development tunneling
@@ -303,8 +681,10 @@ See `env.example` for complete list.
 - ✅ Connection tracking with bandwidth
 - ✅ Rate limiting & security
 - ✅ Comprehensive error handling
+- ✅ Docker containerization for consistent environments
 - ✅ Integrated tunnelto.dev for development
 - ✅ Standardized team development workflow
+- ✅ CI/CD ready with GitHub Actions
 
 ---
 

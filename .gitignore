@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # TypeScript
 dist/
@@ -37,6 +36,12 @@ temp/
 
 # Build
 build/
+
+# Docker
+docker-compose.override.yml
+.dockerignore.local
+*.log
+backup*.sql
 
 # Cursor rules
 .cursorrules
