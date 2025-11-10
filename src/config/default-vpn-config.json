@@ -11,6 +11,7 @@
       "remoteIdentifier": null,
       "credentialId": "client",
       "assetKey": "us",
+      "flagUrl": "https://flagcdn.com/w40/us.png",
       "coordinates": {
         "lat": 37.5407,
         "lng": -77.436
@@ -28,6 +29,7 @@
       "remoteIdentifier": null,
       "credentialId": "client",
       "assetKey": "ng",
+      "flagUrl": "https://flagcdn.com/w40/ng.png",
       "coordinates": {
         "lat": 6.5244,
         "lng": 3.3792

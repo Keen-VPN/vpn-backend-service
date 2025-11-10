@@ -35,7 +35,9 @@
     "migrate:data": "tsx scripts/migrate-data.ts",
     "verify:migration": "tsx scripts/verify-migration.ts",
     "db:export": "tsx export-data-from-supabase.ts",
-    "db:import": "tsx import-data-to-new-db.ts"
+    "db:import": "tsx import-data-to-new-db.ts",
+    "seed:vpn-config": "tsx prisma/seed-vpn-config.ts",
+    "seed:vpn-config-demo": "tsx prisma/seed-vpn-config-demo.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.17.0",

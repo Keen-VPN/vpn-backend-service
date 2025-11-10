@@ -626,7 +626,7 @@ When tunnel is active, you'll see:
 
 - `GET /config/vpn` - Fetch the active VPN configuration (supports `If-None-Match` for ETag caching)
 - `GET /config/vpn?preview=true` - Preview the most recent config (requires `CONFIG_ADMIN_TOKEN`)
-- `POST /config/vpn` - Upsert & optionally activate a new config (requires `CONFIG_ADMIN_TOKEN`)
+- `POST /config/vpn` - Upsert & optionally activate a new config (requires `CONFIG_ADMIN_TOKEN` & `CONFIG_CLIENT_TOKEN`)
 
 ---
 
@@ -652,6 +652,7 @@ STRIPE_PRICE_ID="price_..."
 PLAN_PRICE="100.00"
 PLAN_NAME="Premium VPN - Annual"
 CONFIG_ADMIN_TOKEN="super-secret-admin-token"
+CONFIG_CLIENT_TOKEN="super-secret-client-token"
 ```
 
 See `env.example` for complete list.

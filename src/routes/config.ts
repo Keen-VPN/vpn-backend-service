@@ -15,6 +15,20 @@ const vpnConfigModel = new VPNConfigModel();
 const fallbackConfig = defaultConfigJson as RemoteVPNConfig;
 const fallbackEtag = generateWeakEtag(fallbackConfig);
 
+function getClientTokenFromRequest(req: Request): string | null {
+  const headerToken = req.headers["x-config-client"];
+  if (typeof headerToken === "string" && headerToken.trim() !== "") {
+    return headerToken.trim();
+  }
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.replace("Bearer ", "").trim();
+  }
+
+  return null;
+}
+
 function getAdminTokenFromRequest(req: Request): string | null {
   const headerToken = req.headers["x-config-token"];
   if (typeof headerToken === "string" && headerToken.trim() !== "") {
@@ -54,6 +68,18 @@ function validateConfigPayload(config: RemoteVPNConfig): string[] {
 
 router.get("/vpn", async (req: Request, res: Response): Promise<void> => {
   try {
+    const expectedClientToken = process.env.CONFIG_CLIENT_TOKEN;
+    if (expectedClientToken && expectedClientToken.trim().length > 0) {
+      const providedClientToken = getClientTokenFromRequest(req);
+      if (providedClientToken !== expectedClientToken) {
+        res.status(401).json({
+          success: false,
+          error: "Unauthorized: invalid client token",
+        });
+        return;
+      }
+    }
+
     const previewRequested = req.query.preview === "true";
     let record = null;
 
@@ -140,6 +166,18 @@ router.post(
       }
 
       const { config, activate = true, etag } = req.body;
+
+    const expectedClientToken = process.env.CONFIG_CLIENT_TOKEN;
+    if (activate && expectedClientToken && expectedClientToken.trim().length > 0) {
+      const providedClientToken = getClientTokenFromRequest(req);
+      if (providedClientToken !== expectedClientToken) {
+        res.status(401).json({
+          success: false,
+          error: "Unauthorized: invalid client token",
+        });
+        return;
+      }
+    }
 
       if (!config || typeof config !== "object") {
         res.status(400).json({

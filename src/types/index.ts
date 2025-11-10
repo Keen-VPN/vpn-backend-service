@@ -217,6 +217,7 @@ export interface RemoteVPNServer {
   remoteIdentifier?: string | null;
   credentialId: string;
   assetKey?: string | null;
+  flagUrl?: string | null;
   coordinates?: RemoteVPNServerCoordinates | null;
   isDefault?: boolean | null;
   sortOrder?: number | null;
