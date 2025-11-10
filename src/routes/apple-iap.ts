@@ -1,9 +1,10 @@
-import express, { Request, Response, Router } from "express";
-import User from "../models/User.js";
-import Subscription from "../models/Subscription.js";
-import { verifyPermanentSessionToken } from "../utils/auth.js";
-import type { ApiResponse, LinkAppleIAPRequest } from "../types/index.js";
-import type { SubscriptionWithAppleIAP } from "../types/subscription-types.js";
+import express, { Request, Response } from 'express';
+import User from '../models/User.js';
+import Subscription from '../models/Subscription.js';
+import { verifyPermanentSessionToken } from '../utils/auth.js';
+import prisma from '../config/prisma.js';
+import type { ApiResponse, LinkAppleIAPRequest } from '../types/index.js';
+import type { SubscriptionWithAppleIAP } from '../types/subscription-types.js';
 
 const router: Router = express.Router();
 
@@ -107,30 +108,48 @@ router.post(
       const userModel = new User();
       const subscriptionModel = new Subscription();
 
-      // Get user
-      const user = await userModel.findById(userInfo.userId);
+    // Get user by ID
+    let user = await userModel.findById(userInfo.userId);
+
+    // In development, if user not found by ID, try alternative lookups
+    // This handles cases where token was generated on a different environment
+    if (!user && process.env.NODE_ENV === "development") {
+      console.log(`🔧 Development mode: User ${userInfo.userId} not found by ID for IAP link, trying alternative lookups...`);
+      
+      // Try finding by email first
+      if (userInfo.email) {
+        console.log(`🔍 Searching for user by email: ${userInfo.email}`);
+        user = await userModel.findByEmail(userInfo.email);
+        if (user) {
+          console.log(`✅ Found user by email: ${user.id}`);
+        }
+      }
+      
+      // Try finding by firebase_uid if still not found
       if (!user) {
-        res.status(404).json({
-          success: false,
-          error: "User not found",
-        } as ApiResponse);
-        return;
+        console.log(`🔍 Searching for user by firebase_uid: ${userInfo.userId}`);
+        user = await userModel.findByFirebaseUid(userInfo.userId);
+        if (user) {
+          console.log(`✅ Found user by firebase_uid: ${user.id}`);
+        }
       }
+    }
 
-      // Check if this transaction is already linked
-      const existingSubscription =
-        await subscriptionModel.findByAppleTransactionId(transactionId);
-      if (existingSubscription) {
-        res.status(400).json({
-          success: false,
-          error: "This purchase has already been linked to an account",
-        } as ApiResponse);
-        return;
-      }
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        error: 'User not found'
+      } as ApiResponse);
+      return;
+    }
 
-      // Verify receipt with Apple (if provided)
-      let purchase: any = null;
-      let environment: "Sandbox" | "Production" = "Sandbox";
+    // Verify receipt with Apple (if provided) - do this early so we have purchase data
+    let purchase: any = null;
+    let environment: 'Sandbox' | 'Production' = 'Sandbox';
+    
+    if (receiptData && receiptData.length > 0) {
+      console.log('🔍 Verifying receipt with Apple...');
+      const receiptResult = await verifyAppleReceipt(receiptData);
 
       if (receiptData && receiptData.length > 0) {
         console.log("🔍 Verifying receipt with Apple...");
@@ -169,6 +188,276 @@ router.post(
           "⚠️ No receipt provided (sandbox/development mode), trusting transaction IDs"
         );
       }
+    } else {
+      console.log('⚠️ No receipt provided (sandbox/development mode), trusting transaction IDs');
+    }
+    
+    // Check if this transaction is already linked (after getting purchase data)
+    const existingSubscription = await subscriptionModel.findByAppleTransactionId(transactionId);
+    if (existingSubscription) {
+      // Check if it belongs to the same user
+      if (existingSubscription.userId === user.id) {
+        // Same user - check if subscription needs to be reactivated
+        // If subscription is inactive but IAP is still valid, reactivate and update dates
+        const now = new Date();
+        const existingExpiresDate = existingSubscription.currentPeriodEnd;
+        const isExpired = existingExpiresDate && new Date(existingExpiresDate) < now;
+        
+        // Calculate new expiration date from IAP (if we have purchase data)
+        let newExpiresDate = existingExpiresDate;
+        if (purchase?.expires_date_ms) {
+          newExpiresDate = new Date(parseInt(purchase.expires_date_ms));
+        } else if (!existingExpiresDate || isExpired) {
+          // Default to 1 year from now if no date available
+          newExpiresDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+        }
+        
+        // If subscription exists but is inactive, always reactivate it
+        // Since the client is calling this endpoint with an active IAP, we should reactivate
+        if (existingSubscription.status === 'inactive') {
+          console.log('🔄 Reactivating existing Apple IAP subscription (status was inactive)');
+          const updateData: any = {
+            status: 'active'
+          };
+          
+          // Update end date if it's expired, missing, or we have a better date from purchase
+          if (!existingExpiresDate || isExpired || (newExpiresDate > existingExpiresDate)) {
+            updateData.currentPeriodEnd = newExpiresDate;
+            console.log(`📅 Updating subscription end date to: ${newExpiresDate.toISOString()}`);
+          }
+          
+          await subscriptionModel.update(existingSubscription.id, updateData);
+          // Reload the subscription to get updated status
+          const updatedSubscription = await subscriptionModel.findById(existingSubscription.id);
+          console.log('✅ Apple IAP purchase already linked to this account - reactivated');
+          res.status(200).json({
+            success: true,
+            message: 'Purchase already linked to this account - reactivated',
+            subscription: {
+              id: updatedSubscription!.id,
+              status: updatedSubscription!.status,
+              planName: updatedSubscription!.planName,
+              endDate: updatedSubscription!.currentPeriodEnd?.toISOString(),
+              subscriptionType: 'apple_iap'
+            }
+          } as ApiResponse);
+          return;
+        }
+        
+        // Subscription is already active - return success with current status
+        console.log('✅ Apple IAP purchase already linked to this account (already active)');
+        res.status(200).json({
+          success: true,
+          message: 'Purchase already linked to this account',
+          subscription: {
+            id: existingSubscription.id,
+            status: existingSubscription.status,
+            planName: existingSubscription.planName,
+            endDate: existingSubscription.currentPeriodEnd?.toISOString(),
+            subscriptionType: 'apple_iap'
+          }
+        } as ApiResponse);
+        return;
+      } else {
+        // Different user - transfer subscription to current user and remove duplicates
+        console.log(`🔄 IAP already linked to different account (${existingSubscription.userId}), transferring to current user (${user.id})`);
+        
+        // Find all subscriptions linked to this transaction ID or original transaction ID
+        const allLinkedSubscriptions = await prisma.subscription.findMany({
+          where: {
+            OR: [
+              { appleTransactionId: transactionId },
+              { appleOriginalTransactionId: originalTransactionId }
+            ]
+          }
+        });
+        
+        console.log(`📦 Found ${allLinkedSubscriptions.length} subscription(s) linked to this IAP`);
+        
+        // Keep the original subscription (the one we found first)
+        const originalSubscription = existingSubscription;
+        
+        // Calculate new expiration date from IAP (if we have purchase data)
+        const now = new Date();
+        const existingExpiresDate = originalSubscription.currentPeriodEnd;
+        const isExpired = existingExpiresDate && new Date(existingExpiresDate) < now;
+        
+        let newExpiresDate = existingExpiresDate;
+        if (purchase?.expires_date_ms) {
+          newExpiresDate = new Date(parseInt(purchase.expires_date_ms));
+        } else if (!existingExpiresDate || isExpired) {
+          // Default to 1 year from now if no date available
+          newExpiresDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+        }
+        
+        // Update the original subscription: transfer to current user and reactivate
+        const updateData: any = {
+          userId: user.id,
+          status: 'active'
+        };
+        
+        // Update end date if it's expired, missing, or we have a better date from purchase
+        if (!existingExpiresDate || isExpired || (newExpiresDate > existingExpiresDate)) {
+          updateData.currentPeriodEnd = newExpiresDate;
+          console.log(`📅 Updating subscription end date to: ${newExpiresDate.toISOString()}`);
+        }
+        
+        await subscriptionModel.update(originalSubscription.id, updateData);
+        
+        // Delete all other subscriptions linked to this IAP (from other accounts)
+        const subscriptionsToDelete = allLinkedSubscriptions.filter(
+          sub => sub.id !== originalSubscription.id
+        );
+        
+        for (const subToDelete of subscriptionsToDelete) {
+          console.log(`🗑️ Deleting duplicate subscription ${subToDelete.id} from user ${subToDelete.userId}`);
+          await subscriptionModel.delete(subToDelete.id);
+        }
+        
+        // Reload the updated subscription
+        const updatedSubscription = await subscriptionModel.findById(originalSubscription.id);
+        console.log(`✅ IAP subscription transferred to user ${user.id} and reactivated`);
+        
+        res.status(200).json({
+          success: true,
+          message: 'Purchase transferred to this account and reactivated',
+          subscription: {
+            id: updatedSubscription!.id,
+            status: updatedSubscription!.status,
+            planName: updatedSubscription!.planName,
+            endDate: updatedSubscription!.currentPeriodEnd?.toISOString(),
+            subscriptionType: 'apple_iap'
+          }
+        } as ApiResponse);
+        return;
+      }
+    }
+
+    // Also check by original transaction ID (in case subscription was created with original ID but not transaction ID)
+    const existingByOriginalId = await subscriptionModel.findByAppleOriginalTransactionId(originalTransactionId);
+    if (existingByOriginalId) {
+      // Check if it belongs to the same user
+      if (existingByOriginalId.userId === user.id) {
+        // Same user - same logic as transactionId check
+        const now = new Date();
+        const existingExpiresDate = existingByOriginalId.currentPeriodEnd;
+        const isExpired = existingExpiresDate && new Date(existingExpiresDate) < now;
+        
+        let newExpiresDate = existingExpiresDate;
+        if (purchase?.expires_date_ms) {
+          newExpiresDate = new Date(parseInt(purchase.expires_date_ms));
+        } else if (!existingExpiresDate || isExpired) {
+          newExpiresDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+        }
+        
+        if (existingByOriginalId.status === 'inactive') {
+          console.log('🔄 Reactivating existing Apple IAP subscription (found by original transaction ID, status was inactive)');
+          const updateData: any = {
+            status: 'active',
+            appleTransactionId: transactionId // Update transaction ID if missing
+          };
+          
+          if (!existingExpiresDate || isExpired || (newExpiresDate > existingExpiresDate)) {
+            updateData.currentPeriodEnd = newExpiresDate;
+          }
+          
+          await subscriptionModel.update(existingByOriginalId.id, updateData);
+          const updatedSubscription = await subscriptionModel.findById(existingByOriginalId.id);
+          console.log('✅ Apple IAP purchase already linked to this account - reactivated');
+          res.status(200).json({
+            success: true,
+            message: 'Purchase already linked to this account - reactivated',
+            subscription: {
+              id: updatedSubscription!.id,
+              status: updatedSubscription!.status,
+              planName: updatedSubscription!.planName,
+              endDate: updatedSubscription!.currentPeriodEnd?.toISOString(),
+              subscriptionType: 'apple_iap'
+            }
+          } as ApiResponse);
+          return;
+        }
+        
+        // Already active - return success
+        console.log('✅ Apple IAP purchase already linked to this account (found by original transaction ID, already active)');
+        res.status(200).json({
+          success: true,
+          message: 'Purchase already linked to this account',
+          subscription: {
+            id: existingByOriginalId.id,
+            status: existingByOriginalId.status,
+            planName: existingByOriginalId.planName,
+            endDate: existingByOriginalId.currentPeriodEnd?.toISOString(),
+            subscriptionType: 'apple_iap'
+          }
+        } as ApiResponse);
+        return;
+      } else {
+        // Different user - transfer subscription (same logic as transactionId)
+        console.log(`🔄 IAP already linked to different account by original transaction ID (${existingByOriginalId.userId}), transferring to current user (${user.id})`);
+        
+        const allLinkedSubscriptions = await prisma.subscription.findMany({
+          where: {
+            OR: [
+              { appleTransactionId: transactionId },
+              { appleOriginalTransactionId: originalTransactionId }
+            ]
+          }
+        });
+        
+        console.log(`📦 Found ${allLinkedSubscriptions.length} subscription(s) linked to this IAP`);
+        
+        const originalSubscription = existingByOriginalId;
+        
+        const now = new Date();
+        const existingExpiresDate = originalSubscription.currentPeriodEnd;
+        const isExpired = existingExpiresDate && new Date(existingExpiresDate) < now;
+        
+        let newExpiresDate = existingExpiresDate;
+        if (purchase?.expires_date_ms) {
+          newExpiresDate = new Date(parseInt(purchase.expires_date_ms));
+        } else if (!existingExpiresDate || isExpired) {
+          newExpiresDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+        }
+        
+        const updateData: any = {
+          userId: user.id,
+          status: 'active',
+          appleTransactionId: transactionId // Update transaction ID
+        };
+        
+        if (!existingExpiresDate || isExpired || (newExpiresDate > existingExpiresDate)) {
+          updateData.currentPeriodEnd = newExpiresDate;
+        }
+        
+        await subscriptionModel.update(originalSubscription.id, updateData);
+        
+        const subscriptionsToDelete = allLinkedSubscriptions.filter(
+          sub => sub.id !== originalSubscription.id
+        );
+        
+        for (const subToDelete of subscriptionsToDelete) {
+          console.log(`🗑️ Deleting duplicate subscription ${subToDelete.id} from user ${subToDelete.userId}`);
+          await subscriptionModel.delete(subToDelete.id);
+        }
+        
+        const updatedSubscription = await subscriptionModel.findById(originalSubscription.id);
+        console.log(`✅ IAP subscription transferred to user ${user.id} and reactivated`);
+        
+        res.status(200).json({
+          success: true,
+          message: 'Purchase transferred to this account and reactivated',
+          subscription: {
+            id: updatedSubscription!.id,
+            status: updatedSubscription!.status,
+            planName: updatedSubscription!.planName,
+            endDate: updatedSubscription!.currentPeriodEnd?.toISOString(),
+            subscriptionType: 'apple_iap'
+          }
+        } as ApiResponse);
+        return;
+      }
+    }
 
       // Verify product ID matches (if we have purchase data)
       if (purchase && purchase.product_id !== productId) {
