@@ -178,6 +178,16 @@ export interface LinkAppleIAPRequest {
   productId: string;
 }
 
+export interface CaptureAppleIAPRequest {
+  receiptData?: string; // Base64 encoded receipt (optional for immediate capture)
+  transactionId: string;
+  originalTransactionId: string;
+  productId: string;
+  purchaseDateMs: string; // Purchase date in milliseconds from Apple
+  expiresDateMs?: string; // Expiration date in milliseconds from Apple (optional)
+  environment?: 'Sandbox' | 'Production';
+}
+
 // Stripe webhook event types
 export interface StripeWebhookEvent {
   id: string;

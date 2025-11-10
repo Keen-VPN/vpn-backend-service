@@ -1,9 +1,10 @@
 import express, { Request, Response } from 'express';
 import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
+import UnlinkedIAPPurchase from '../models/UnlinkedIAPPurchase.js';
 import { verifyPermanentSessionToken } from '../utils/auth.js';
 import prisma from '../config/prisma.js';
-import type { ApiResponse, LinkAppleIAPRequest } from '../types/index.js';
+import type { ApiResponse, LinkAppleIAPRequest, CaptureAppleIAPRequest } from '../types/index.js';
 import type { SubscriptionWithAppleIAP } from '../types/subscription-types.js';
 
 const router = express.Router();
@@ -59,6 +60,119 @@ async function verifyAppleReceipt(receiptData: string): Promise<any> {
 }
 
 /**
+ * Capture Apple IAP purchase immediately (no authentication required)
+ * This endpoint captures the purchase date from Apple even if user is not logged in
+ * The purchase will be linked to the user account later when they log in
+ */
+router.post('/capture-purchase', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { receiptData, transactionId, originalTransactionId, productId, purchaseDateMs, expiresDateMs, environment } = req.body as CaptureAppleIAPRequest;
+
+    // Validate required fields
+    if (!transactionId || !originalTransactionId || !productId || !purchaseDateMs) {
+      res.status(400).json({
+        success: false,
+        error: 'Missing required fields: transactionId, originalTransactionId, productId, purchaseDateMs'
+      } as ApiResponse);
+      return;
+    }
+
+    console.log('🍎 Capturing Apple IAP purchase (unlinked):', { transactionId, originalTransactionId, productId });
+
+    const unlinkedPurchaseModel = new UnlinkedIAPPurchase();
+
+    // Check if this purchase is already captured
+    const existingUnlinked = await unlinkedPurchaseModel.findByTransactionId(transactionId);
+    if (existingUnlinked) {
+      console.log('📦 Purchase already captured, skipping');
+      res.status(200).json({
+        success: true,
+        message: 'Purchase already captured',
+        alreadyExists: true
+      } as ApiResponse);
+      return;
+    }
+
+    // Verify receipt with Apple if provided (optional for immediate capture)
+    let purchaseDate: Date;
+    let expiresDate: Date | null = null;
+    let appleEnvironment: 'Sandbox' | 'Production' = environment || 'Sandbox';
+
+    if (receiptData && receiptData.length > 0) {
+      console.log('🔍 Verifying receipt with Apple...');
+      try {
+        const receiptResult = await verifyAppleReceipt(receiptData);
+
+        if (receiptResult.status === 0) {
+          console.log('✅ Apple receipt verified successfully');
+          appleEnvironment = receiptResult.environment === 'Production' ? 'Production' : 'Sandbox';
+
+          // Extract purchase data from receipt
+          const receipt = receiptResult.receipt;
+          const inAppPurchases = receipt.in_app || [];
+          
+          const purchase = inAppPurchases.find((p: any) => 
+            p.transaction_id === transactionId || p.original_transaction_id === originalTransactionId
+          );
+
+          if (purchase) {
+            // Use dates from Apple receipt (most accurate)
+            purchaseDate = new Date(parseInt(purchase.purchase_date_ms));
+            expiresDate = purchase.expires_date_ms ? new Date(parseInt(purchase.expires_date_ms)) : null;
+            console.log('📅 Using dates from Apple receipt:', { purchaseDate, expiresDate });
+          } else {
+            // Fallback to provided dates
+            purchaseDate = new Date(parseInt(purchaseDateMs));
+            expiresDate = expiresDateMs ? new Date(parseInt(expiresDateMs)) : null;
+            console.log('⚠️ Transaction not found in receipt, using provided dates');
+          }
+        } else {
+          // Receipt verification failed, use provided dates
+          console.log('⚠️ Receipt verification failed, using provided dates');
+          purchaseDate = new Date(parseInt(purchaseDateMs));
+          expiresDate = expiresDateMs ? new Date(parseInt(expiresDateMs)) : null;
+        }
+      } catch (error) {
+        console.error('❌ Error verifying receipt:', error);
+        // Fallback to provided dates
+        purchaseDate = new Date(parseInt(purchaseDateMs));
+        expiresDate = expiresDateMs ? new Date(parseInt(expiresDateMs)) : null;
+      }
+    } else {
+      // No receipt provided, use provided dates
+      purchaseDate = new Date(parseInt(purchaseDateMs));
+      expiresDate = expiresDateMs ? new Date(parseInt(expiresDateMs)) : null;
+      console.log('📅 Using provided dates (no receipt):', { purchaseDate, expiresDate });
+    }
+
+    // Create unlinked purchase record
+    const unlinkedPurchase = await unlinkedPurchaseModel.upsert({
+      appleTransactionId: transactionId,
+      appleOriginalTransactionId: originalTransactionId,
+      appleProductId: productId,
+      appleEnvironment: appleEnvironment,
+      purchaseDate: purchaseDate,
+      expiresDate: expiresDate
+    });
+
+    console.log('✅ Apple IAP purchase captured successfully:', unlinkedPurchase.id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Apple IAP purchase captured successfully',
+      purchaseId: unlinkedPurchase.id
+    } as ApiResponse);
+
+  } catch (error) {
+    console.error('❌ Apple IAP capture error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to capture Apple IAP purchase'
+    } as ApiResponse);
+  }
+});
+
+/**
  * Link Apple IAP purchase to user account
  */
 router.post('/link-purchase', async (req: Request, res: Response): Promise<void> => {
@@ -88,6 +202,7 @@ router.post('/link-purchase', async (req: Request, res: Response): Promise<void>
 
     const userModel = new User();
     const subscriptionModel = new Subscription();
+    const unlinkedPurchaseModel = new UnlinkedIAPPurchase();
 
     // Get user by ID
     let user = await userModel.findById(userInfo.userId);
@@ -443,10 +558,41 @@ router.post('/link-purchase', async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    // Check for unlinked purchase first (this captures the original purchase date)
+    let unlinkedPurchase = await unlinkedPurchaseModel.findByTransactionId(transactionId);
+    if (!unlinkedPurchase) {
+      // Also check by original transaction ID
+      unlinkedPurchase = await unlinkedPurchaseModel.findByOriginalTransactionId(originalTransactionId);
+    }
+
     // Calculate subscription period
-    const purchaseDate = purchase?.purchase_date_ms ? new Date(parseInt(purchase.purchase_date_ms)) : new Date();
-    const expiresDate = purchase?.expires_date_ms ? new Date(parseInt(purchase.expires_date_ms)) :
-                       new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // Default to 1 year for annual subscription
+    // Priority: 1. Unlinked purchase date (most accurate - captured at purchase time)
+    //           2. Purchase data from receipt (if available)
+    //           3. Current date (fallback)
+    let purchaseDate: Date;
+    let expiresDate: Date;
+
+    if (unlinkedPurchase) {
+      // Use the original purchase date from when the user actually subscribed
+      purchaseDate = unlinkedPurchase.purchaseDate;
+      expiresDate = unlinkedPurchase.expiresDate || new Date(unlinkedPurchase.purchaseDate.getTime() + 365 * 24 * 60 * 60 * 1000);
+      console.log('📅 Using original purchase date from unlinked purchase:', {
+        purchaseDate: purchaseDate.toISOString(),
+        expiresDate: expiresDate.toISOString(),
+        daysSincePurchase: Math.floor((Date.now() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24))
+      });
+    } else if (purchase?.purchase_date_ms) {
+      // Use purchase date from receipt verification
+      purchaseDate = new Date(parseInt(purchase.purchase_date_ms));
+      expiresDate = purchase?.expires_date_ms ? new Date(parseInt(purchase.expires_date_ms)) :
+                     new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      console.log('📅 Using purchase date from receipt:', purchaseDate.toISOString());
+    } else {
+      // Fallback to current date (should rarely happen)
+      purchaseDate = new Date();
+      expiresDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      console.log('⚠️ No purchase date found, using current date (fallback)');
+    }
     
     // Determine plan details based on product ID
     let planName = 'Premium VPN - Annual';
@@ -477,6 +623,12 @@ router.post('/link-purchase', async (req: Request, res: Response): Promise<void>
       currentPeriodEnd: expiresDate || undefined,
       cancelAtPeriodEnd: false
     });
+
+    // Mark unlinked purchase as linked (if it exists)
+    if (unlinkedPurchase && !unlinkedPurchase.isLinked) {
+      await unlinkedPurchaseModel.markAsLinked(transactionId, user.id);
+      console.log('✅ Marked unlinked purchase as linked');
+    }
 
     console.log('✅ Apple IAP subscription linked successfully:', subscription.id);
 
@@ -628,47 +780,92 @@ router.post('/restore', async (req: Request, res: Response): Promise<void> => {
     }
 
     const subscriptionModel = new Subscription();
+    const unlinkedPurchaseModel = new UnlinkedIAPPurchase();
     const inAppPurchases = receiptResult.receipt.in_app || [];
     
     let restoredCount = 0;
     const restoredPurchases = [];
 
     for (const purchase of inAppPurchases) {
-      // Check if this transaction is already linked
-      const existingSubscription = await subscriptionModel.findByAppleOriginalTransactionId(purchase.original_transaction_id);
+      // Check if subscription exists by transaction ID first
+      let existingSubscription = await subscriptionModel.findByAppleTransactionId(purchase.transaction_id);
+      
+      // If not found, check by original transaction ID
+      if (!existingSubscription) {
+        existingSubscription = await subscriptionModel.findByAppleOriginalTransactionId(purchase.original_transaction_id);
+      }
       
       if (existingSubscription) {
         console.log('📦 Purchase already linked:', purchase.original_transaction_id);
         continue;
       }
 
-      // Create subscription for this purchase
-      const purchaseDate = new Date(parseInt(purchase.purchase_date_ms));
-      const expiresDate = purchase.expires_date_ms ? new Date(parseInt(purchase.expires_date_ms)) : null;
+      // No subscription exists - check for unlinked purchases
+      let purchaseDate: Date;
+      let expiresDate: Date | null;
+      let appleEnvironment: 'Sandbox' | 'Production' = receiptResult.environment === 'Production' ? 'Production' : 'Sandbox';
+      let unlinkedPurchase = null;
 
-      await subscriptionModel.create({
+      // Find all unlinked purchases for this original transaction ID
+      const unlinkedPurchases = await unlinkedPurchaseModel.findAllByOriginalTransactionId(purchase.original_transaction_id);
+      
+      if (unlinkedPurchases.length > 0) {
+        // Use the latest unlinked purchase (already sorted by purchaseDate desc)
+        unlinkedPurchase = unlinkedPurchases[0];
+        purchaseDate = unlinkedPurchase.purchaseDate;
+        expiresDate = unlinkedPurchase.expiresDate;
+        appleEnvironment = unlinkedPurchase.appleEnvironment as 'Sandbox' | 'Production';
+        console.log('📦 Found unlinked purchase, using original purchase date:', purchaseDate.toISOString());
+        console.log(`   Using latest unlinked purchase from ${unlinkedPurchases.length} available`);
+      } else {
+        // No unlinked purchase found - use receipt data
+        purchaseDate = new Date(parseInt(purchase.purchase_date_ms));
+        expiresDate = purchase.expires_date_ms ? new Date(parseInt(purchase.expires_date_ms)) : null;
+        console.log('📦 No unlinked purchase found, using receipt data');
+      }
+
+      // Determine plan details based on product ID
+      let planName = 'Premium VPN - Annual';
+      let billingPeriod = 'year';
+      let priceAmount = 130.99;
+
+      if (purchase.product_id === 'com.keenvpn.premium.annual') {
+        planName = 'Premium VPN - Annual';
+        billingPeriod = 'year';
+        priceAmount = 130.99;
+      }
+
+      // Create subscription for this purchase
+      const subscription = await subscriptionModel.create({
         userId: userInfo.userId,
         subscriptionType: 'apple_iap',
         appleTransactionId: purchase.transaction_id,
         appleOriginalTransactionId: purchase.original_transaction_id,
         appleProductId: purchase.product_id,
-        appleEnvironment: receiptResult.environment === 'Sandbox' ? 'Sandbox' : 'Production',
+        appleEnvironment: appleEnvironment,
         status: expiresDate && expiresDate > new Date() ? 'active' : 'inactive',
         planId: purchase.product_id,
-        planName: purchase.product_id === 'com.keenvpn.premium.annual' ? 'Premium VPN - Annual' : 'Premium VPN',
-        priceAmount: purchase.product_id === 'com.keenvpn.premium.annual' ? 130.99 : 0,
+        planName,
+        priceAmount,
         priceCurrency: 'USD',
-        billingPeriod: 'year',
+        billingPeriod: billingPeriod as 'year' | 'month',
         currentPeriodStart: purchaseDate,
         currentPeriodEnd: expiresDate || undefined,
         cancelAtPeriodEnd: false
       });
 
+      // Mark unlinked purchase as linked (if we used one)
+      if (unlinkedPurchase) {
+        await unlinkedPurchaseModel.markAsLinked(unlinkedPurchase.appleTransactionId, userInfo.userId);
+        console.log('✅ Marked unlinked purchase as linked');
+      }
+
       restoredPurchases.push({
         productId: purchase.product_id,
         transactionId: purchase.transaction_id,
         purchaseDate: purchaseDate.toISOString(),
-        expiresDate: expiresDate?.toISOString()
+        expiresDate: expiresDate?.toISOString(),
+        fromUnlinkedPurchase: !!unlinkedPurchase
       });
 
       restoredCount++;

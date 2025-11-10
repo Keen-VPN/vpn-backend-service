@@ -127,3 +127,24 @@ model SessionAggregate {
   @@index([subscriptionTier])
   @@map("session_aggregates")
 }
+
+model UnlinkedIAPPurchase {
+  id                         String    @id @default(uuid())
+  appleTransactionId         String    @unique @map("apple_transaction_id")
+  appleOriginalTransactionId String    @map("apple_original_transaction_id")
+  appleProductId             String    @map("apple_product_id")
+  appleEnvironment           String    @map("apple_environment")
+  purchaseDate               DateTime  @map("purchase_date")
+  expiresDate                DateTime? @map("expires_date")
+  isLinked                   Boolean   @default(false) @map("is_linked")
+  linkedAt                   DateTime? @map("linked_at")
+  linkedUserId               String?   @map("linked_user_id")
+  createdAt                  DateTime  @default(now()) @map("created_at")
+  updatedAt                  DateTime  @updatedAt @map("updated_at")
+
+  @@index([appleTransactionId])
+  @@index([appleOriginalTransactionId])
+  @@index([isLinked])
+  @@index([linkedUserId])
+  @@map("unlinked_iap_purchases")
+}
