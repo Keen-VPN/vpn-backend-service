@@ -12,6 +12,7 @@ import subscriptionRoutes from "./routes/subscription.js";
 import connectionRoutes from "./routes/connection.js";
 import desktopAuthRoutes from "./routes/desktop-auth.js";
 import appleIAPRoutes from "./routes/apple-iap.js";
+import configRoutes from "./routes/config.js";
 import stripe from "./config/stripe.js";
 import "./config/firebase.js"; // Initialize Firebase
 import User from "./models/User.js";
@@ -379,6 +380,7 @@ app.use("/api/subscription", subscriptionRoutes);
 app.use("/api/connection", connectionRoutes);
 app.use("/api/desktop-auth", desktopAuthRoutes);
 app.use("/api/apple-iap", appleIAPRoutes);
+app.use("/api/config", configRoutes);
 
 // Health check endpoint
 app.get("/health", async (_req: Request, res: Response): Promise<void> => {

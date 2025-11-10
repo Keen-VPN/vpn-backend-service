@@ -1,0 +1,55 @@
+{
+  "version": "fallback-1.0.0",
+  "updatedAt": null,
+  "servers": [
+    {
+      "id": "us-east",
+      "name": "United States",
+      "country": "United States",
+      "city": "Virginia",
+      "serverAddress": "3.225.112.116",
+      "remoteIdentifier": null,
+      "credentialId": "client",
+      "assetKey": "us",
+      "coordinates": {
+        "lat": 37.5407,
+        "lng": -77.436
+      },
+      "isDefault": true,
+      "sortOrder": 10,
+      "metadata": null
+    },
+    {
+      "id": "ng-lagos",
+      "name": "Nigeria",
+      "country": "Nigeria",
+      "city": "Lagos",
+      "serverAddress": "169.255.57.34",
+      "remoteIdentifier": null,
+      "credentialId": "client",
+      "assetKey": "ng",
+      "coordinates": {
+        "lat": 6.5244,
+        "lng": 3.3792
+      },
+      "isDefault": false,
+      "sortOrder": 20,
+      "metadata": null
+    }
+  ],
+  "credentials": [
+    {
+      "id": "client",
+      "username": "client",
+      "password": "KeenVPNClient2024Secure",
+      "sharedSecret": null,
+      "certificate": null,
+      "certificatePassword": null,
+      "metadata": null
+    }
+  ],
+  "featureFlags": null,
+  "rollout": null,
+  "metadata": null
+}
+

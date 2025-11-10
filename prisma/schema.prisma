@@ -139,3 +139,16 @@ model SessionAggregate {
   @@index([subscriptionTier])
   @@map("session_aggregates")
 }
+
+model VpnConfig {
+  id        String   @id @default(uuid())
+  version   String   @unique
+  payload   Json
+  etag      String   @unique
+  isActive  Boolean  @default(false) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@map("vpn_configs")
+}
