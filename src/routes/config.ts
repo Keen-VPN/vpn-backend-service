@@ -67,6 +67,60 @@ function validateConfigPayload(config: RemoteVPNConfig): string[] {
   return errors;
 }
 
+function normalizeConfigDates(config: RemoteVPNConfig): RemoteVPNConfig {
+  if (!config) {
+    return config;
+  }
+
+  let updatedAt = config.updatedAt;
+  if (updatedAt) {
+    const toIsoString = (value: string): string | undefined => {
+      if (!value) {
+        return undefined;
+      }
+
+      const attempt = (input: string): string | undefined => {
+        const parsed = new Date(input);
+        return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+      };
+
+      // First try the raw value.
+      let iso = attempt(value);
+      if (iso) {
+        return iso;
+      }
+
+      // Some legacy configs replace ":" with "-" in the time component.
+      const legacyMatch = value.match(
+        /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})(?:-(\d{3}))?Z$/
+      );
+      if (legacyMatch) {
+        const [_, date, hh, mm, ss, ms] = legacyMatch;
+        const fixed = `${date}T${hh}:${mm}:${ss}${ms ? `.${ms}` : ""}Z`;
+        iso = attempt(fixed);
+        if (iso) {
+          return iso;
+        }
+      }
+
+      console.warn(
+        `⚠️ normalizeConfigDates: unable to parse updatedAt "${value}", dropping field`
+      );
+      return undefined;
+    };
+
+    updatedAt =
+      typeof updatedAt === "string"
+        ? toIsoString(updatedAt)
+        : toIsoString(String(updatedAt));
+  }
+
+  return {
+    ...config,
+    updatedAt,
+  };
+}
+
 router.get("/vpn", async (req: Request, res: Response): Promise<void> => {
   try {
     const expectedClientToken = process.env.CONFIG_CLIENT_TOKEN;
@@ -102,6 +156,7 @@ router.get("/vpn", async (req: Request, res: Response): Promise<void> => {
     }
 
     const payload = record?.payload ?? fallbackConfig;
+    const normalizedConfig = normalizeConfigDates(payload);
     const etag = record?.etag ?? fallbackEtag;
 
     if (req.headers["if-none-match"] === etag) {
@@ -110,8 +165,8 @@ router.get("/vpn", async (req: Request, res: Response): Promise<void> => {
     }
 
     const response: VPNConfigResponseBody = {
-      config: payload,
-      version: payload.version,
+      config: normalizedConfig,
+      version: normalizedConfig.version,
       etag,
       source: record ? "database" : "fallback",
       updatedAt: record?.updatedAt?.toISOString() ?? null,
@@ -206,13 +261,13 @@ router.post(
 
       const record = await vpnConfigModel.save({
         version: payload.version,
-        payload,
+        payload: normalizeConfigDates(payload),
         etag: computedEtag,
         activate,
       });
 
       const response: VPNConfigResponseBody = {
-        config: record.payload,
+        config: normalizeConfigDates(record.payload),
         version: record.version,
         etag: record.etag,
         source: "database",
@@ -331,14 +386,14 @@ router.put(
       }
 
       const record = await vpnConfigModel.update(req.params.id, {
-        payload,
+        payload: payload ? normalizeConfigDates(payload) : undefined,
         version: nextVersion,
         etag: nextEtag,
         activate,
       });
 
       const response: VPNConfigResponseBody = {
-        config: record.payload,
+        config: normalizeConfigDates(record.payload),
         version: record.version,
         etag: record.etag,
         source: "database",

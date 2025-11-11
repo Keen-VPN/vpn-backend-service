@@ -383,7 +383,7 @@ app.use("/api/apple-iap", appleIAPRoutes);
 app.use("/api/config", configRoutes);
 
 // Health check endpoint
-app.get("/health", async (_req: Request, res: Response): Promise<void> => {
+async function sendHealthResponse(res: Response): Promise<void> {
   try {
     const healthData = {
       status: "healthy",
@@ -405,6 +405,15 @@ app.get("/health", async (_req: Request, res: Response): Promise<void> => {
       error: "Internal server error during health check",
     });
   }
+}
+
+app.get("/health", async (_req: Request, res: Response): Promise<void> => {
+  await sendHealthResponse(res);
+});
+
+// Compatibility alias for clients that prefix the API base path.
+app.get("/api/health", async (_req: Request, res: Response): Promise<void> => {
+  await sendHealthResponse(res);
 });
 
 // Stripe checkout success page
