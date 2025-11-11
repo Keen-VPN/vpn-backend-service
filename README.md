@@ -627,6 +627,8 @@ When tunnel is active, you'll see:
 - `GET /config/vpn` - Fetch the active VPN configuration (supports `If-None-Match` for ETag caching)
 - `GET /config/vpn?preview=true` - Preview the most recent config (requires `CONFIG_ADMIN_TOKEN`)
 - `POST /config/vpn` - Upsert & optionally activate a new config (requires `CONFIG_ADMIN_TOKEN` & `CONFIG_CLIENT_TOKEN`)
+- `PUT /config/vpn/:id` - Update an existing configuration's payload, etag, or activation state (requires `CONFIG_ADMIN_TOKEN`; activation changes also require `CONFIG_CLIENT_TOKEN`)
+- `DELETE /config/vpn/:id` - Delete a configuration record (requires `CONFIG_ADMIN_TOKEN`)
 
 ---
 

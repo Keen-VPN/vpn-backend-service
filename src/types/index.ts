@@ -259,6 +259,12 @@ export interface SaveVPNConfigRequest {
   etag?: string;
 }
 
+export interface UpdateVPNConfigRequest {
+  config?: RemoteVPNConfig;
+  activate?: boolean;
+  etag?: string;
+}
+
 export interface VPNConfigResponseBody {
   config: RemoteVPNConfig;
   version: string;

@@ -6,6 +6,7 @@ import { generateWeakEtag } from "../utils/etag.js";
 import type {
   RemoteVPNConfig,
   SaveVPNConfigRequest,
+  UpdateVPNConfigRequest,
   VPNConfigResponseBody,
 } from "../types/index.js";
 
@@ -167,17 +168,21 @@ router.post(
 
       const { config, activate = true, etag } = req.body;
 
-    const expectedClientToken = process.env.CONFIG_CLIENT_TOKEN;
-    if (activate && expectedClientToken && expectedClientToken.trim().length > 0) {
-      const providedClientToken = getClientTokenFromRequest(req);
-      if (providedClientToken !== expectedClientToken) {
-        res.status(401).json({
-          success: false,
-          error: "Unauthorized: invalid client token",
-        });
-        return;
+      const expectedClientToken = process.env.CONFIG_CLIENT_TOKEN;
+      if (
+        activate &&
+        expectedClientToken &&
+        expectedClientToken.trim().length > 0
+      ) {
+        const providedClientToken = getClientTokenFromRequest(req);
+        if (providedClientToken !== expectedClientToken) {
+          res.status(401).json({
+            success: false,
+            error: "Unauthorized: invalid client token",
+          });
+          return;
+        }
       }
-    }
 
       if (!config || typeof config !== "object") {
         res.status(400).json({
@@ -236,6 +241,212 @@ router.post(
       res.status(500).json({
         success: false,
         error: "Failed to save VPN configuration",
+      });
+    }
+  }
+);
+
+router.put(
+  "/vpn/:id",
+  async (
+    req: Request<{ id: string }, unknown, UpdateVPNConfigRequest>,
+    res: Response
+  ) => {
+    try {
+      const expectedToken = process.env.CONFIG_ADMIN_TOKEN;
+      if (!expectedToken) {
+        res.status(503).json({
+          success: false,
+          error: "CONFIG_ADMIN_TOKEN is not configured on the server",
+        });
+        return;
+      }
+
+      const providedToken = getAdminTokenFromRequest(req);
+      if (!providedToken || providedToken !== expectedToken) {
+        res.status(401).json({
+          success: false,
+          error: "Unauthorized: invalid configuration token",
+        });
+        return;
+      }
+
+      if (!req.body || typeof req.body !== "object") {
+        res.status(400).json({
+          success: false,
+          error: "Request body is required",
+        });
+        return;
+      }
+
+      const { config, activate, etag } = req.body;
+      const hasConfig = typeof config === "object" && config !== null;
+      const hasActivate = typeof activate === "boolean";
+      const hasEtag = typeof etag === "string" && etag.trim().length > 0;
+
+      if (!hasConfig && !hasActivate && !hasEtag) {
+        res.status(400).json({
+          success: false,
+          error:
+            "Invalid request: provide at least one of config, activate, or etag",
+        });
+        return;
+      }
+
+      if (activate === true) {
+        const expectedClientToken = process.env.CONFIG_CLIENT_TOKEN;
+        if (
+          expectedClientToken &&
+          expectedClientToken.trim().length > 0 &&
+          getClientTokenFromRequest(req) !== expectedClientToken
+        ) {
+          res.status(401).json({
+            success: false,
+            error: "Unauthorized: invalid client token",
+          });
+          return;
+        }
+      }
+
+      let payload: RemoteVPNConfig | undefined;
+      let nextEtag = etag;
+      let nextVersion: string | undefined;
+
+      if (hasConfig) {
+        const configPayload = config as RemoteVPNConfig;
+        const errors = validateConfigPayload(configPayload);
+        if (errors.length > 0) {
+          res.status(400).json({
+            success: false,
+            error: `Invalid configuration: ${errors.join(", ")}`,
+          });
+          return;
+        }
+
+        payload = configPayload;
+        nextVersion = configPayload.version;
+        if (!nextEtag || nextEtag.trim().length === 0) {
+          nextEtag = generateWeakEtag(configPayload);
+        }
+      }
+
+      const record = await vpnConfigModel.update(req.params.id, {
+        payload,
+        version: nextVersion,
+        etag: nextEtag,
+        activate,
+      });
+
+      const response: VPNConfigResponseBody = {
+        config: record.payload,
+        version: record.version,
+        etag: record.etag,
+        source: "database",
+        updatedAt: record.updatedAt.toISOString(),
+      };
+
+      res.status(200).json({
+        success: true,
+        data: response,
+      });
+    } catch (error) {
+      console.error("❌ Failed to update VPN config:", error);
+
+      if (error instanceof Error) {
+        if (error.message === "NOT_FOUND") {
+          res.status(404).json({
+            success: false,
+            error: "Configuration not found",
+          });
+          return;
+        }
+
+        if (error.message === "NO_FIELDS_PROVIDED") {
+          res.status(400).json({
+            success: false,
+            error: "No update fields provided",
+          });
+          return;
+        }
+      }
+
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        res.status(409).json({
+          success: false,
+          error:
+            "A configuration with the same version or etag already exists. Use a new version or update the existing one.",
+        });
+        return;
+      }
+
+      res.status(500).json({
+        success: false,
+        error: "Failed to update VPN configuration",
+      });
+    }
+  }
+);
+
+router.delete(
+  "/vpn/:id",
+  async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    try {
+      const expectedToken = process.env.CONFIG_ADMIN_TOKEN;
+      if (!expectedToken) {
+        res.status(503).json({
+          success: false,
+          error: "CONFIG_ADMIN_TOKEN is not configured on the server",
+        });
+        return;
+      }
+
+      const providedToken = getAdminTokenFromRequest(req);
+      if (!providedToken || providedToken !== expectedToken) {
+        res.status(401).json({
+          success: false,
+          error: "Unauthorized: invalid configuration token",
+        });
+        return;
+      }
+
+      const record = await vpnConfigModel.delete(req.params.id);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          id: record.id,
+          version: record.version,
+          deleted: true,
+        },
+      });
+    } catch (error) {
+      console.error("❌ Failed to delete VPN config:", error);
+
+      if (error instanceof Error && error.message === "NOT_FOUND") {
+        res.status(404).json({
+          success: false,
+          error: "Configuration not found",
+        });
+        return;
+      }
+
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2025"
+      ) {
+        res.status(404).json({
+          success: false,
+          error: "Configuration not found",
+        });
+        return;
+      }
+
+      res.status(500).json({
+        success: false,
+        error: "Failed to delete VPN configuration",
       });
     }
   }

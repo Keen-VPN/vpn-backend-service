@@ -19,3 +19,4 @@ CREATE UNIQUE INDEX "vpn_configs_etag_key" ON "vpn_configs"("etag");
 -- Handy index for quickly finding the active config
 CREATE INDEX "vpn_configs_is_active_idx" ON "vpn_configs"("is_active");
 
+
