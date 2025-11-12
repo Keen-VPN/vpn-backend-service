@@ -808,7 +808,75 @@ router.post("/verify", async (req: Request, res: Response): Promise<void> => {
 
     // Get user from database
     const userModel = new User();
-    const user = await userModel.findById(payload.userId);
+    let user = await userModel.findById(payload.userId);
+
+    // In development, if user not found by ID, try finding by email or firebaseUid
+    // This handles cases where token was generated on a different environment
+    if (!user && process.env.NODE_ENV === "development") {
+      console.log(`🔧 Development mode: User ${payload.userId} not found by ID, trying alternative lookups...`);
+      
+      // Try finding by email first
+      user = await userModel.findByEmail(payload.email);
+      if (user) {
+        console.log(`✅ Found user by email: ${user.id}`);
+      } else {
+        // Try finding by firebaseUid (some tokens might store userId as firebaseUid)
+        user = await userModel.findByFirebaseUid(payload.userId);
+        if (user) {
+          console.log(`✅ Found user by firebaseUid: ${user.id}`);
+        }
+      }
+    }
+
+    // In development, if user still doesn't exist but token is valid, create the user
+    if (!user && process.env.NODE_ENV === "development") {
+      console.log(`🔧 Development mode: Creating new user from token payload`);
+      console.log(`   Token payload: userId=${payload.userId}, email=${payload.email}, provider=${payload.provider}`);
+      try {
+        // Create user from token data - store token's userId as firebaseUid for future lookups
+        // Note: Prisma will auto-generate a new database ID, but we'll store the token's userId as firebaseUid
+        const createData: any = {
+          firebaseUid: payload.userId, // Store token's userId as firebaseUid for lookup
+          email: payload.email,
+          displayName: payload.email.split("@")[0], // Use email prefix as display name
+          provider: payload.provider,
+          emailVerified: true,
+        };
+        
+        // Set provider-specific fields
+        if (payload.provider === "google") {
+          createData.googleUserId = payload.userId;
+        } else if (payload.provider === "apple") {
+          createData.appleUserId = payload.userId;
+        }
+        
+        user = await userModel.create(createData);
+        
+        console.log(`✅ Created development user: ${user.id} (${user.email})`);
+        console.log(`   Note: Original token userId (${payload.userId}) stored as firebaseUid for future lookups`);
+      } catch (createError) {
+        console.error("❌ Failed to create development user:", createError);
+        // If it's a unique constraint error, try to find the user again
+        if ((createError as any).code === 'P2002') {
+          console.log("   User might have been created by another request, trying to find...");
+          user = await userModel.findByFirebaseUid(payload.userId);
+          if (!user) {
+            user = await userModel.findByEmail(payload.email);
+          }
+          if (user) {
+            console.log(`✅ Found user after creation conflict: ${user.id}`);
+          }
+        }
+        
+        if (!user) {
+          res.status(404).json({
+            success: false,
+            error: "User not found and could not be created",
+          } as ApiResponse);
+          return;
+        }
+      }
+    }
 
     if (!user) {
       res.status(404).json({

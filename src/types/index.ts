@@ -219,3 +219,84 @@ export interface StripeWebhookEvent {
     object: any;
   };
 }
+
+// Remote VPN configuration types
+export interface RemoteVPNServerCoordinates {
+  lat: number;
+  lng: number;
+}
+
+export interface RemoteVPNCredential {
+  id: string;
+  username: string;
+  password: string;
+  sharedSecret?: string | null;
+  certificate?: string | null;
+  certificatePassword?: string | null;
+  metadata?: Record<string, string> | null;
+}
+
+export interface RemoteVPNServer {
+  id: string;
+  name: string;
+  country: string;
+  city: string;
+  serverAddress: string;
+  remoteIdentifier?: string | null;
+  credentialId: string;
+  assetKey?: string | null;
+  flagUrl?: string | null;
+  coordinates?: RemoteVPNServerCoordinates | null;
+  isDefault?: boolean | null;
+  sortOrder?: number | null;
+  metadata?: Record<string, string> | null;
+}
+
+export interface RemoteVPNRollout {
+  minAppVersion?: string | null;
+  maxAppVersion?: string | null;
+  allowDuringReview?: boolean | null;
+  stagedPercentage?: number | null;
+  channels?: string[] | null;
+  metadata?: Record<string, string> | null;
+}
+
+export interface RemoteVPNConfig {
+  version: string;
+  updatedAt?: string | null;
+  servers: RemoteVPNServer[];
+  credentials: RemoteVPNCredential[];
+  featureFlags?: Record<string, boolean> | null;
+  rollout?: RemoteVPNRollout | null;
+  metadata?: Record<string, string> | null;
+}
+
+export interface VPNConfigRecord {
+  id: string;
+  version: string;
+  payload: RemoteVPNConfig;
+  etag: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SaveVPNConfigRequest {
+  config: RemoteVPNConfig;
+  activate?: boolean;
+  etag?: string;
+}
+
+export interface UpdateVPNConfigRequest {
+  config?: RemoteVPNConfig;
+  activate?: boolean;
+  etag?: string;
+}
+
+export interface VPNConfigResponseBody {
+  config: RemoteVPNConfig;
+  version: string;
+  etag: string;
+  source: "database" | "fallback";
+  updatedAt: string | null;
+}

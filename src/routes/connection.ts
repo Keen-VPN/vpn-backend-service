@@ -38,6 +38,7 @@ router.post(
           }
         | undefined;
 
+
     // Validate required fields
     if (!session_start || !duration_seconds || !platform) {
       console.error("❌ Invalid payload - Missing required fields:", {
@@ -181,7 +182,13 @@ router.post(
       },
     } as ApiResponse);
   } catch (error) {
-    console.error("Error in connection session endpoint:", error);
+    console.error("❌ Error in connection session endpoint:", error);
+    if (error instanceof Error) {
+      console.error("Error details:", {
+        message: error.message,
+        stack: error.stack,
+      });
+    }
     res.status(500).json({
       success: false,
       error: "Internal server error",

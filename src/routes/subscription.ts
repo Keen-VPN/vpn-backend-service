@@ -92,7 +92,25 @@ router.post(
       const subscriptionModel = new Subscription();
 
       // Get user by ID
-      const user = await userModel.findById(userInfo.userId);
+      let user = await userModel.findById(userInfo.userId);
+
+      // In development, if user not found by ID, try alternative lookups
+      // This handles cases where token was generated on a different environment
+      if (!user && process.env.NODE_ENV === "development") {
+        console.log(`🔧 Development mode: User ${userInfo.userId} not found by ID for subscription check, trying alternative lookups...`);
+        
+        // Try finding by email first
+        user = await userModel.findByEmail(userInfo.email);
+        if (user) {
+          console.log(`✅ Found user by email for subscription: ${user.id}`);
+        } else {
+          // Try finding by firebaseUid (token's userId stored as firebaseUid)
+          user = await userModel.findByFirebaseUid(userInfo.userId);
+          if (user) {
+            console.log(`✅ Found user by firebaseUid for subscription: ${user.id}`);
+          }
+        }
+      }
 
       if (!user) {
         res.status(404).json({
