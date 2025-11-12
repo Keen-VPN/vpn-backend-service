@@ -28,6 +28,7 @@ model User {
   subscriptions      Subscription[]
   deviceFingerprints DeviceTrialFingerprint[]
   trialGrants        TrialGrant?
+  appleIAPPurchases  AppleIAPPurchase[]
 
   @@map("users")
 }
@@ -60,11 +61,33 @@ model Subscription {
   @@index([userId])
   @@index([subscriptionType])
   @@index([stripeCustomerId])
+  @@index([stripeSubscriptionId])
   @@index([appleTransactionId])
   @@index([appleOriginalTransactionId])
   @@index([status])
   @@index([currentPeriodEnd])
   @@map("subscriptions")
+}
+
+model AppleIAPPurchase {
+  id                    String    @id @default(uuid())
+  transactionId         String    @map("apple_transaction_id")
+  originalTransactionId String    @unique @map("apple_original_transaction_id")
+  productId             String    @map("apple_product_id")
+  environment           String?   @map("apple_environment")
+  purchaseDate          DateTime  @map("purchase_date") @db.Timestamptz(6)
+  expiresDate           DateTime? @map("expires_date") @db.Timestamptz(6)
+  receiptData           String?   @map("receipt_data")
+  capturedAt            DateTime  @default(now()) @map("captured_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  linkedUserId          String?   @map("linked_user_id")
+  linkedEmail           String?   @map("linked_email")
+  linkedAt              DateTime? @map("linked_at") @db.Timestamptz(6)
+  linkedUser            User?     @relation(fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  @@index([transactionId], map: "apple_iap_purchase_transaction_idx")
+  @@index([originalTransactionId], map: "apple_iap_purchase_original_idx")
+  @@map("apple_iap_purchases")
 }
 
 model ConnectionSession {
@@ -100,6 +123,28 @@ model ConnectionSession {
   @@index([isAnonymized])
   @@index([subscriptionTier])
   @@map("connection_sessions")
+}
+
+model ProcessedSession {
+  id                      String   @id @default(uuid())
+  sessionId               String   @unique @map("session_id")
+  userId                  String   @map("user_id")
+  dataConsumed            Decimal  @map("data_consumed") @db.Decimal(15, 2)
+  averageSessionBandwidth Decimal  @map("average_session_bandwidth") @db.Decimal(15, 2)
+  sessionDuration         Decimal  @map("session_duration") @db.Decimal(10, 2)
+  startedAt               DateTime @map("started_at") @db.Timestamptz(6)
+  endedAt                 DateTime @map("ended_at") @db.Timestamptz(6)
+  terminationReason       String   @map("termination_reason")
+  serverLocation          String?  @map("server_location")
+  processedAt             DateTime @default(now()) @map("processed_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([startedAt])
+  @@index([endedAt])
+  @@index([serverLocation])
+  @@index([terminationReason])
+  @@index([processedAt])
+  @@map("processed_sessions")
 }
 
 model SessionAggregate {
@@ -178,47 +223,6 @@ model VpnConfig {
 
   @@index([isActive])
   @@map("vpn_configs")
-}
-
-model processed_sessions {
-  id                        String   @id
-  session_id                String   @unique
-  user_id                   String
-  data_consumed             Decimal  @db.Decimal(15, 2)
-  average_session_bandwidth Decimal  @db.Decimal(15, 2)
-  session_duration          Decimal  @db.Decimal(10, 2)
-  started_at                DateTime @db.Timestamptz(6)
-  ended_at                  DateTime @db.Timestamptz(6)
-  termination_reason        String
-  server_location           String?
-  processed_at              DateTime @default(now()) @db.Timestamptz(6)
-
-  @@index([ended_at])
-  @@index([processed_at])
-  @@index([server_location])
-  @@index([started_at])
-  @@index([termination_reason])
-  @@index([user_id])
-}
-
-model unlinked_iap_purchases {
-  id                            String    @id
-  apple_transaction_id          String    @unique
-  apple_original_transaction_id String
-  apple_product_id              String
-  apple_environment             String
-  purchase_date                 DateTime
-  expires_date                  DateTime?
-  is_linked                     Boolean   @default(false)
-  linked_at                     DateTime?
-  linked_user_id                String?
-  created_at                    DateTime  @default(now())
-  updated_at                    DateTime
-
-  @@index([apple_original_transaction_id])
-  @@index([apple_transaction_id])
-  @@index([is_linked])
-  @@index([linked_user_id])
 }
 
 enum TerminationReason {
