@@ -8,26 +8,26 @@ datasource db {
 }
 
 model User {
-  id                 String              @id @default(uuid())
-  firebaseUid        String?             @unique @map("firebase_uid")
-  appleUserId        String?             @unique @map("apple_user_id")
-  googleUserId       String?             @unique @map("google_user_id")
-  email              String              @unique
-  displayName        String?             @map("display_name")
-  provider           String              @default("google")
-  emailVerified      Boolean             @default(false) @map("email_verified")
-  trialActive        Boolean             @default(false) @map("trial_active")
-  trialStartsAt      DateTime?           @map("trial_starts_at")
-  trialEndsAt        DateTime?           @map("trial_ends_at")
-  trialTier          String?             @map("trial_tier")
-  createdAt          DateTime            @default(now()) @map("created_at")
-  updatedAt          DateTime            @updatedAt @map("updated_at")
-  stripeCustomerId   String?             @unique @map("stripe_customer_id")
+  id                 String                   @id @default(uuid())
+  firebaseUid        String?                  @unique @map("firebase_uid")
+  appleUserId        String?                  @unique @map("apple_user_id")
+  googleUserId       String?                  @unique @map("google_user_id")
+  email              String                   @unique
+  displayName        String?                  @map("display_name")
+  provider           String                   @default("google")
+  emailVerified      Boolean                  @default(false) @map("email_verified")
+  stripeCustomerId   String?                  @unique @map("stripe_customer_id")
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
+  trialActive        Boolean                  @default(false) @map("trial_active")
+  trialStartsAt      DateTime?                @map("trial_starts_at") @db.Timestamp(6)
+  trialEndsAt        DateTime?                @map("trial_ends_at") @db.Timestamp(6)
+  trialTier          String?                  @map("trial_tier")
   connectionSessions ConnectionSession[]
-  subscriptions      Subscription[]
-  trialGrants        TrialGrant[]
-  deviceFingerprints DeviceTrialFingerprint[]
   pushTokens         PushToken[]
+  subscriptions      Subscription[]
+  deviceFingerprints DeviceTrialFingerprint[]
+  trialGrants        TrialGrant?
 
   @@map("users")
 }
@@ -36,7 +36,7 @@ model Subscription {
   id                         String    @id @default(uuid())
   userId                     String    @map("user_id")
   stripeCustomerId           String?   @map("stripe_customer_id")
-  stripeSubscriptionId       String?   @unique @map("stripe_subscription_id")
+  stripeSubscriptionId       String?   @map("stripe_subscription_id")
   status                     String    @default("inactive")
   planId                     String?   @map("plan_id")
   planName                   String?   @map("plan_name")
@@ -49,13 +49,14 @@ model Subscription {
   cancelledAt                DateTime? @map("cancelled_at")
   createdAt                  DateTime  @default(now()) @map("created_at")
   updatedAt                  DateTime  @updatedAt @map("updated_at")
-  appleEnvironment           String?   @map("apple_environment")
+  subscriptionType           String    @default("stripe") @map("subscription_type")
+  appleTransactionId         String?   @unique @map("apple_transaction_id")
   appleOriginalTransactionId String?   @map("apple_original_transaction_id")
   appleProductId             String?   @map("apple_product_id")
-  appleTransactionId         String?   @unique @map("apple_transaction_id")
-  subscriptionType           String    @default("stripe") @map("subscription_type")
+  appleEnvironment           String?   @map("apple_environment")
   user                       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([stripeSubscriptionId, currentPeriodStart], map: "subscription_period_unique")
   @@index([userId])
   @@index([subscriptionType])
   @@index([stripeCustomerId])
@@ -66,48 +67,25 @@ model Subscription {
   @@map("subscriptions")
 }
 
-// ========================================
-// ENUMS
-// ========================================
-enum TerminationReason {
-  USER_TERMINATION @map("user_termination")
-  CONNECTION_LOST  @map("connection_lost")
-
-  @@map("termination_reason")
-}
-
-enum EventType {
-  SESSION_START @map("session_start")
-  HEARTBEAT     @map("heartbeat")
-  SESSION_END   @map("session_end")
-
-  @@map("event_type")
-}
-
-// ========================================
-// CONNECTION SESSION MODEL
-// ========================================
 model ConnectionSession {
   id                 String            @id @default(uuid())
   userId             String            @map("user_id")
   sessionStart       DateTime          @map("session_start")
   sessionEnd         DateTime?         @map("session_end")
   durationSeconds    Int               @default(0) @map("duration_seconds")
-  serverLocation     String?           @map("server_location") // 'US', 'Nigeria', etc.
-  serverAddress      String?           @map("server_address") // IP address of VPN server (for troubleshooting only)
-  platform           String // 'macOS', 'iOS', 'Android', 'Web'
+  serverLocation     String?           @map("server_location")
+  serverAddress      String?           @map("server_address")
+  platform           String
   appVersion         String?           @map("app_version")
   bytesTransferred   BigInt            @default(0) @map("bytes_transferred")
-  subscriptionTier   String?           @map("subscription_tier") // 'free', 'basic', 'premium'
-  terminationReason  TerminationReason @default(USER_TERMINATION) @map("termination_reason")
-  eventType          EventType         @default(SESSION_START) @map("event_type") // Event-driven session tracking
-  heartbeatTimestamp DateTime?         @map("heartbeat_timestamp") // For heartbeat events
-  isAnonymized       Boolean           @default(false) @map("is_anonymized") // Privacy flag
+  subscriptionTier   String?           @map("subscription_tier")
+  isAnonymized       Boolean           @default(false) @map("is_anonymized")
   createdAt          DateTime          @default(now()) @map("created_at")
   updatedAt          DateTime          @updatedAt @map("updated_at")
-
-  // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  terminationReason  TerminationReason @default(USER_TERMINATION) @map("termination_reason")
+  eventType          EventType         @default(SESSION_START) @map("event_type")
+  heartbeatTimestamp DateTime?         @map("heartbeat_timestamp")
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([sessionStart])
@@ -148,60 +126,112 @@ model SessionAggregate {
 }
 
 model TrialGrant {
-  id            String   @id @default(uuid())
-  userId        String   @map("user_id")
-  deviceHash    String   @map("device_hash")
-  grantedAt     DateTime @default(now()) @map("granted_at")
-  expiresAt     DateTime @map("expires_at")
-  channel       String   @default("auto") @map("channel")
-  metadata      Json?    @map("metadata")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @unique(map: "trial_grants_user_unique") @map("user_id")
+  deviceHash String   @map("device_hash")
+  grantedAt  DateTime @default(now()) @map("granted_at") @db.Timestamp(6)
+  expiresAt  DateTime @map("expires_at") @db.Timestamp(6)
+  channel    String   @default("auto") @map("channel")
+  metadata   Json?    @map("metadata")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId])
-  @@index([deviceHash])
+  @@index([deviceHash], map: "trial_grants_device_hash")
   @@map("trial_grants")
 }
 
 model DeviceTrialFingerprint {
-  id        String   @id @default(uuid())
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId    String   @map("user_id")
-  hash      String   @unique
+  hash      String   @unique(map: "trial_device_fingerprints_hash_unique")
   platform  String?
-  createdAt DateTime @default(now()) @map("created_at")
-  lastSeen  DateTime @default(now()) @map("last_seen")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  lastSeen  DateTime @default(now()) @map("last_seen") @db.Timestamp(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
+  @@index([userId], map: "trial_device_fingerprints_user_id")
   @@map("trial_device_fingerprints")
 }
 
 model PushToken {
-  id          String   @id @default(uuid())
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId      String   @map("user_id")
   token       String   @unique
   deviceHash  String?  @map("device_hash")
   platform    String?
   environment String?  @map("environment")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([userId])
   @@map("push_tokens")
 }
 
 model VpnConfig {
-  id        String   @id @default(uuid())
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   version   String   @unique
   payload   Json
   etag      String   @unique
   isActive  Boolean  @default(false) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@index([isActive])
   @@map("vpn_configs")
+}
+
+model processed_sessions {
+  id                        String   @id
+  session_id                String   @unique
+  user_id                   String
+  data_consumed             Decimal  @db.Decimal(15, 2)
+  average_session_bandwidth Decimal  @db.Decimal(15, 2)
+  session_duration          Decimal  @db.Decimal(10, 2)
+  started_at                DateTime @db.Timestamptz(6)
+  ended_at                  DateTime @db.Timestamptz(6)
+  termination_reason        String
+  server_location           String?
+  processed_at              DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([ended_at])
+  @@index([processed_at])
+  @@index([server_location])
+  @@index([started_at])
+  @@index([termination_reason])
+  @@index([user_id])
+}
+
+model unlinked_iap_purchases {
+  id                            String    @id
+  apple_transaction_id          String    @unique
+  apple_original_transaction_id String
+  apple_product_id              String
+  apple_environment             String
+  purchase_date                 DateTime
+  expires_date                  DateTime?
+  is_linked                     Boolean   @default(false)
+  linked_at                     DateTime?
+  linked_user_id                String?
+  created_at                    DateTime  @default(now())
+  updated_at                    DateTime
+
+  @@index([apple_original_transaction_id])
+  @@index([apple_transaction_id])
+  @@index([is_linked])
+  @@index([linked_user_id])
+}
+
+enum TerminationReason {
+  USER_TERMINATION @map("user_termination")
+  CONNECTION_LOST  @map("connection_lost")
+
+  @@map("termination_reason")
+}
+
+enum EventType {
+  SESSION_START @map("session_start")
+  HEARTBEAT     @map("heartbeat")
+  SESSION_END   @map("session_end")
+
+  @@map("event_type")
 }
