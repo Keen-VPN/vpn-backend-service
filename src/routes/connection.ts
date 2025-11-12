@@ -6,15 +6,17 @@ import type {
   TerminationReason,
   EventType,
 } from "../types/index.js";
+import { requirePaidOrTrial } from "../middleware/requirePaidOrTrial.js";
 
 const router: Router = express.Router();
 
 // Record a connection session
-router.post("/session", async (req: Request, res: Response): Promise<void> => {
+router.post(
+  "/session",
+  requirePaidOrTrial,
+  async (req: Request, res: Response): Promise<void> => {
   try {
     const {
-      firebase_uid,
-      email,
       session_start,
       session_end,
       duration_seconds,
@@ -28,6 +30,13 @@ router.post("/session", async (req: Request, res: Response): Promise<void> => {
       event_type,
       heartbeat_timestamp,
     } = req.body;
+    const trialStatus =
+      (req as any).trialStatus as
+        | {
+            trialActive?: boolean;
+            daysRemaining?: number;
+          }
+        | undefined;
 
     // Validate required fields
     if (!session_start || !duration_seconds || !platform) {
@@ -117,33 +126,16 @@ router.post("/session", async (req: Request, res: Response): Promise<void> => {
     }
 
     // Find user
+    const authUserId = (req as any).authUserId as string | undefined;
     const userModel = new User();
-    let user = null;
-
-    if (email && email.trim() !== "") {
-      console.log(`🔍 Looking up user by email: ${email}`);
-      user = await userModel.findByEmail(email);
-      if (user) {
-        console.log(`✅ User found by email: ${user.id}`);
-      }
-    }
-
-    if (!user && firebase_uid && firebase_uid.trim() !== "") {
-      console.log(`🔍 Looking up user by firebase_uid: ${firebase_uid}`);
-      user = await userModel.findByFirebaseUid(firebase_uid);
-      if (user) {
-        console.log(`✅ User found by firebase_uid: ${user.id}`);
-      }
-    }
+    const user = authUserId ? await userModel.findById(authUserId) : null;
 
     if (!user) {
-      console.error(
-        "❌ User lookup failed - cannot record session without user ID"
-      );
-      res.status(400).json({
+      console.error("❌ Authenticated user not found", { authUserId });
+      res.status(401).json({
         success: false,
-        error: "User not found. Please ensure you are properly authenticated.",
-      } as ApiResponse);
+        error: "Authentication required",
+      });
       return;
     }
 
@@ -159,7 +151,9 @@ router.post("/session", async (req: Request, res: Response): Promise<void> => {
       platform: platform,
       appVersion: app_version,
       bytesTransferred: bytes_transferred || 0,
-      subscriptionTier: subscription_tier || "free",
+      subscriptionTier: trialStatus?.trialActive
+        ? "trial"
+        : subscription_tier || "free",
       terminationReason:
         (termination_reason as TerminationReason) || "USER_TERMINATION", // Default to user termination if not provided
       eventType: (event_type as EventType) || "SESSION_START", // Default to session start if not provided
@@ -198,14 +192,16 @@ router.post("/session", async (req: Request, res: Response): Promise<void> => {
 // Get user's connection sessions
 router.get(
   "/sessions/:identifier",
+  requirePaidOrTrial,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { identifier } = req.params;
 
-      if (!identifier) {
-        res.status(400).json({
+      const authUserId = (req as any).authUserId as string | undefined;
+      if (!authUserId) {
+        res.status(401).json({
           success: false,
-          error: "Identifier is required",
+          error: "Authentication required",
         } as ApiResponse);
         return;
       }
@@ -213,22 +209,27 @@ router.get(
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
 
-      // Find user by email or Firebase UID
       const userModel = new User();
-      let user = null;
-
-      if (identifier.includes("@")) {
-        user = await userModel.findByEmail(identifier);
-      }
-
-      if (!user) {
-        user = await userModel.findByFirebaseUid(identifier);
-      }
+      const user = await userModel.findById(authUserId);
 
       if (!user) {
         res.status(404).json({
           success: false,
           error: "User not found",
+        } as ApiResponse);
+        return;
+      }
+
+      const identifierMatches =
+        !identifier ||
+        identifier === user.id ||
+        identifier === user.email ||
+        identifier === user.firebaseUid;
+
+      if (!identifierMatches) {
+        res.status(403).json({
+          success: false,
+          error: "Forbidden",
         } as ApiResponse);
         return;
       }
@@ -259,34 +260,41 @@ router.get(
 // Get user's connection statistics
 router.get(
   "/stats/:identifier",
+  requirePaidOrTrial,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { identifier } = req.params;
 
-      if (!identifier) {
-        res.status(400).json({
+      const authUserId = (req as any).authUserId as string | undefined;
+      if (!authUserId) {
+        res.status(401).json({
           success: false,
-          error: "Identifier is required",
+          error: "Authentication required",
         } as ApiResponse);
         return;
       }
 
-      // Find user by email or Firebase UID
       const userModel = new User();
-      let user = null;
-
-      if (identifier.includes("@")) {
-        user = await userModel.findByEmail(identifier);
-      }
-
-      if (!user) {
-        user = await userModel.findByFirebaseUid(identifier);
-      }
+      const user = await userModel.findById(authUserId);
 
       if (!user) {
         res.status(404).json({
           success: false,
           error: "User not found",
+        } as ApiResponse);
+        return;
+      }
+
+      const identifierMatches =
+        !identifier ||
+        identifier === user.id ||
+        identifier === user.email ||
+        identifier === user.firebaseUid;
+
+      if (!identifierMatches) {
+        res.status(403).json({
+          success: false,
+          error: "Forbidden",
         } as ApiResponse);
         return;
       }

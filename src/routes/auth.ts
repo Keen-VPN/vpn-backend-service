@@ -1,6 +1,9 @@
 import express, { Request, Response, Router } from "express";
+import { Prisma } from "@prisma/client";
 import User from "../models/User.js";
 import { generatePermanentSessionToken } from "../utils/auth.js";
+import TrialService from "../services/TrialService.js";
+import { serializeTrialStatus } from "../utils/trial.js";
 import type {
   AppleSignInData,
   ApiResponse,
@@ -15,6 +18,7 @@ declare global {
 }
 
 const router: Router = express.Router();
+const trialService = new TrialService();
 
 /**
  * Check if a user is blacklisted (previously deleted)
@@ -134,6 +138,14 @@ router.post(
     try {
       const { identityToken, userIdentifier, email, fullName } =
         req.body as AppleSignInData;
+      const deviceFingerprint =
+        typeof (req.body as any).deviceFingerprint === "string"
+          ? ((req.body as any).deviceFingerprint as string).trim()
+          : null;
+      const devicePlatform =
+        typeof (req.body as any).devicePlatform === "string"
+          ? ((req.body as any).devicePlatform as string).trim()
+          : undefined;
 
       // Validate required fields
       if (!identityToken) {
@@ -284,6 +296,7 @@ router.post(
       // Check if user exists - try multiple lookup strategies
       const userModel = new User();
       let user = await userModel.findByFirebaseUid(firebaseUid);
+      let isNewUser = false;
 
       console.log(
         "🔍 User lookup by firebaseUid:",
@@ -368,16 +381,49 @@ router.post(
           provider: "apple",
         });
 
-        user = await userModel.create({
-          firebaseUid,
-          appleUserId: appleUserId,
-          email: userEmail,
-          displayName: displayName || userEmail.split("@")[0],
-          provider: "apple",
-          emailVerified,
-        });
-
-        console.log("✅ New user created:", user.id);
+        isNewUser = true;
+        try {
+          user = await userModel.create({
+            firebaseUid,
+            appleUserId: appleUserId,
+            email: userEmail,
+            displayName: displayName || userEmail.split("@")[0],
+            provider: "apple",
+            emailVerified,
+          });
+          console.log("✅ New user created:", user.id);
+        } catch (error) {
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002" &&
+            Array.isArray(error.meta?.target) &&
+            error.meta.target.includes("email") &&
+            userEmail
+          ) {
+            console.log(
+              "⚠️ Email already exists; reusing existing account for Apple sign-in"
+            );
+            const existingByEmail = await userModel.findByEmail(userEmail);
+            if (!existingByEmail) {
+              throw error;
+            }
+            isNewUser = false;
+            user = await userModel.update(existingByEmail.id, {
+              firebaseUid,
+              appleUserId: appleUserId,
+              provider: "apple",
+              displayName:
+                displayName || existingByEmail.displayName || userEmail.split("@")[0],
+              emailVerified,
+            });
+            console.log(
+              "✅ Linked existing user to Apple credentials:",
+              user.id
+            );
+          } else {
+            throw error;
+          }
+        }
       } else {
         // Update existing user
         console.log("👤 Existing user found, updating credentials");
@@ -399,6 +445,19 @@ router.post(
 
         console.log("✅ User updated:", user.id);
       }
+
+      await trialService.touchDeviceFingerprint(
+        user.id,
+        deviceFingerprint,
+        devicePlatform || user.provider
+      );
+
+      if (isNewUser) {
+        await trialService.grantIfEligible(user, deviceFingerprint);
+      }
+
+      await trialService.expireIfNeeded(user.id);
+      const trialStatus = await trialService.status(user.id);
 
       // Generate session token
       const tokenPayload: SessionTokenPayload = {
@@ -437,6 +496,8 @@ router.post(
         subscriptionData ? subscriptionData.status : "none"
       );
 
+      console.log("✅ Trial status:", trialStatus);
+
       res.status(200).json({
         success: true,
         user: {
@@ -448,6 +509,7 @@ router.post(
         sessionToken,
         authMethod: "apple",
         subscription: subscriptionData,
+        trial: serializeTrialStatus(trialStatus),
       } as ApiResponse);
     } catch (error) {
       console.error("❌ Apple Sign-In error:", error);
@@ -468,6 +530,14 @@ router.post(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { idToken } = req.body;
+      const deviceFingerprint =
+        typeof (req.body as any).deviceFingerprint === "string"
+          ? ((req.body as any).deviceFingerprint as string).trim()
+          : null;
+      const devicePlatform =
+        typeof (req.body as any).devicePlatform === "string"
+          ? ((req.body as any).devicePlatform as string).trim()
+          : undefined;
 
       if (!idToken) {
         res.status(400).json({
@@ -580,6 +650,7 @@ router.post(
       // Check if user exists
       const userModel = new User();
       let user = await userModel.findByFirebaseUid(firebaseUid);
+      let isNewUser = false;
 
       if (!user) {
         // Try to find by email
@@ -623,6 +694,7 @@ router.post(
 
           // Create new user (only for truly new users)
           console.log("👤 Creating new user with Google credentials");
+          isNewUser = true;
           user = await userModel.create({
             firebaseUid,
             googleUserId: googleUserId,
@@ -636,6 +708,19 @@ router.post(
         // Update last login
         console.log("👤 Existing Google user found");
       }
+
+      await trialService.touchDeviceFingerprint(
+        user.id,
+        deviceFingerprint,
+        devicePlatform || user.provider
+      );
+
+      if (isNewUser) {
+        await trialService.grantIfEligible(user, deviceFingerprint);
+      }
+
+      await trialService.expireIfNeeded(user.id);
+      const trialStatus = await trialService.status(user.id);
 
       // Generate session token
       const tokenPayload: SessionTokenPayload = {
@@ -668,6 +753,7 @@ router.post(
         "✅ Subscription status:",
         subscriptionData ? subscriptionData.status : "none"
       );
+      console.log("✅ Trial status:", trialStatus);
 
       res.status(200).json({
         success: true,
@@ -680,6 +766,7 @@ router.post(
         sessionToken,
         authMethod: "google",
         subscription: subscriptionData,
+        trial: serializeTrialStatus(trialStatus),
       } as ApiResponse);
     } catch (error) {
       console.error("❌ Google Sign-In error:", error);
@@ -747,6 +834,8 @@ router.post("/verify", async (req: Request, res: Response): Promise<void> => {
       };
     }
 
+    const trialStatus = await trialService.status(user.id);
+
     res.status(200).json({
       success: true,
       user: {
@@ -756,6 +845,7 @@ router.post("/verify", async (req: Request, res: Response): Promise<void> => {
         provider: user.provider,
       },
       subscription: subscriptionData,
+      trial: serializeTrialStatus(trialStatus),
     } as ApiResponse);
   } catch (error) {
     console.error("❌ Token verification error:", error);

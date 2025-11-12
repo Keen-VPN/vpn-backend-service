@@ -16,11 +16,18 @@ model User {
   displayName        String?             @map("display_name")
   provider           String              @default("google")
   emailVerified      Boolean             @default(false) @map("email_verified")
+  trialActive        Boolean             @default(false) @map("trial_active")
+  trialStartsAt      DateTime?           @map("trial_starts_at")
+  trialEndsAt        DateTime?           @map("trial_ends_at")
+  trialTier          String?             @map("trial_tier")
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   stripeCustomerId   String?             @unique @map("stripe_customer_id")
   connectionSessions ConnectionSession[]
   subscriptions      Subscription[]
+  trialGrants        TrialGrant[]
+  deviceFingerprints DeviceTrialFingerprint[]
+  pushTokens         PushToken[]
 
   @@map("users")
 }
@@ -138,4 +145,50 @@ model SessionAggregate {
   @@index([serverLocation])
   @@index([subscriptionTier])
   @@map("session_aggregates")
+}
+
+model TrialGrant {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  deviceHash    String   @map("device_hash")
+  grantedAt     DateTime @default(now()) @map("granted_at")
+  expiresAt     DateTime @map("expires_at")
+  channel       String   @default("auto") @map("channel")
+  metadata      Json?    @map("metadata")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@index([deviceHash])
+  @@map("trial_grants")
+}
+
+model DeviceTrialFingerprint {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  hash      String   @unique
+  platform  String?
+  createdAt DateTime @default(now()) @map("created_at")
+  lastSeen  DateTime @default(now()) @map("last_seen")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("trial_device_fingerprints")
+}
+
+model PushToken {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  token       String   @unique
+  deviceHash  String?  @map("device_hash")
+  platform    String?
+  environment String?  @map("environment")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_tokens")
 }

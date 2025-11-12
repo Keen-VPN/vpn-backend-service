@@ -698,3 +698,83 @@ Check documentation files for detailed guides or visit:
 ---
 
 **Built for KeenVPN** 🚀
+
+## ✨ Features
+
+- 🔐 Secure authentication (Google, Apple, Firebase)
+- 💳 Subscription management (Stripe + Apple IAP)
+- 🧠 Intelligent VPN server selection
+- 📊 Real-time analytics and monitoring
+- 🆓 Automatic 30-day free trials on first sign-up
+
+---
+
+## 🆓 Free Trial Overview
+
+- New users receive a one-time 30-day trial automatically after a successful Apple or Google sign-up.
+- Trials are gated by `FF_TRIALS_ENABLED` and require both unique email and device fingerprint (`platform + deviceId`) to prevent abuse.
+- Trial status lives on the user record (`trialActive`, `trialStartsAt`, `trialEndsAt`) with an immutable audit row in `trial_grants` and a device fingerprint table.
+- `/api/me/subscription` now returns a merged view of paid + trial status; the clients should rely on this endpoint to drive UI badges, countdowns, and post-expiry CTA states.
+- Paid-critical endpoints (e.g. `/api/connection/*`, `/api/desktop-auth/*`) use `requirePaidOrTrial` middleware so access continues during a trial and is revoked immediately when the trial lapses.
+- Trial lifecycle telemetry: `trial.granted`, `trial.reminder.sent`, `trial.expired`, `trial.blocked` (device/email re-use) and log stubs for push/in-app notifications.
+- Reminder + expiry jobs are scheduled in-process (T-3 days and T+0). Integrate your push service in `NotificationService` when ready for production delivery channels.
+
+### Local Testing Tips
+
+```bash
+# Run unit tests for UTC trial date helpers
+npm test
+
+# Inspect trial status quickly
+curl -H "Authorization: Bearer <token>" http://localhost:3001/api/me/subscription
+```
+
+---
+
+## 🧑‍💻 Tech Stack
+
+- **TypeScript 5.3** - Full type safety
+- **Prisma 6.17** - Modern ORM
+- **Express 4.18** - Web framework
+- **PostgreSQL** - Database (Neon/Supabase/Docker)
+- **Docker & Docker Compose** - Containerized development environment
+- **Stripe** - Payment processing
+- **JWT** - Authentication
+- **Tunnelto.dev** - Secure local development tunneling
+
+---
+
+## 📊 Database Schema
+
+- **users** - User accounts (Google, Apple, Firebase auth)
+- **subscriptions** - Subscription management
+- **connection_sessions** - VPN usage tracking
+
+---
+
+## 🚀 Production Ready
+
+- ✅ Full TypeScript type safety
+- ✅ Prisma ORM for clean queries
+- ✅ Apple Sign In support
+- ✅ Subscription management
+- ✅ Connection tracking with bandwidth
+- ✅ Rate limiting & security
+- ✅ Comprehensive error handling
+- ✅ Docker containerization for consistent environments
+- ✅ Integrated tunnelto.dev for development
+- ✅ Standardized team development workflow
+- ✅ CI/CD ready with GitHub Actions
+
+---
+
+## 📞 Support
+
+Check documentation files for detailed guides or visit:
+
+- Prisma Docs: https://www.prisma.io/docs
+- TypeScript Docs: https://www.typescriptlang.org/docs
+
+---
+
+**Built for KeenVPN** 🚀

@@ -21,6 +21,10 @@ export interface UpdateUserData {
   provider?: string;
   emailVerified?: boolean;
   stripeCustomerId?: string;
+  trialActive?: boolean;
+  trialStartsAt?: Date | null;
+  trialEndsAt?: Date | null;
+  trialTier?: string | null;
 }
 
 // Subscription related types
@@ -42,6 +46,14 @@ export interface CreateSubscriptionData {
   currentPeriodStart?: Date;
   currentPeriodEnd?: Date;
   cancelAtPeriodEnd?: boolean;
+}
+
+export interface TrialStatus {
+  trialActive: boolean;
+  trialEndsAt: string | null;
+  daysRemaining: number;
+  isPaid: boolean;
+  tier: string | null;
 }
 
 export interface UpdateSubscriptionData {
@@ -140,6 +152,22 @@ export interface DeleteAccountResult {
   deletedUserId: string;
   deletedEmail: string;
   stripeCustomerIds: string[];
+}
+
+export interface SubscriptionStatusSummary {
+  status: string;
+  plan?: string;
+  endDate?: string | Date | null;
+  customerId?: string;
+  cancelAtPeriodEnd?: boolean;
+  subscriptionType?: string;
+}
+
+export interface SubscriptionStatusResponse {
+  success: boolean;
+  subscription: SubscriptionStatusSummary;
+  hasActiveSubscription: boolean;
+  trial: TrialStatus;
 }
 
 // Authentication types
