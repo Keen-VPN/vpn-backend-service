@@ -1,121 +1,126 @@
 name: Integration Tests
 
 on:
-    push:
-        branches: [main, staging]
-    pull_request:
-        branches: [main, staging]
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
 
 jobs:
-    test:
-        name: Run Integration Tests
-        runs-on: ubuntu-latest
+  test:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
 
-        services:
-            postgres:
-                image: postgres:15
-                env:
-                    POSTGRES_USER: keenvpn
-                    POSTGRES_PASSWORD: keenvpn_test_password
-                    POSTGRES_DB: keenvpn_test
-                ports:
-                    - 5432:5432
-                options: >-
-                    --health-cmd pg_isready
-                    --health-interval 10s
-                    --health-timeout 5s
-                    --health-retries 5
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: keenvpn
+          POSTGRES_PASSWORD: keenvpn_test_password
+          POSTGRES_DB: keenvpn_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-            - name: Setup Node.js
-              uses: actions/setup-node@v4
-              with:
-                  node-version: "18"
-                  cache: "npm"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
 
-            - name: Install dependencies
-              run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-            - name: Setup environment variables
-              run: |
-                  cat > .env.test << EOF
-                  NODE_ENV=test
-                  DATABASE_URL=postgresql://keenvpn:keenvpn_test_password@localhost:5432/keenvpn_test
-                  JWT_SECRET=test_jwt_secret_min_32_characters_long_for_testing
-                  FIREBASE_PROJECT_ID=test-project-id
-                  FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nTEST_KEY\n-----END PRIVATE KEY-----\n"
-                  FIREBASE_CLIENT_EMAIL=test@test-project.iam.gserviceaccount.com
-                  STRIPE_SECRET_KEY=sk_test_mock_key
-                  STRIPE_WEBHOOK_SECRET=whsec_test_mock_secret
-                  STRIPE_PRICE_ID=price_test_mock_id
-                  PLAN_PRICE=100.00
-                  PLAN_NAME=Premium VPN - Annual
-                  PORT=3001
-                  TUNNELTO_ENABLED=false
-                  EOF
+      - name: Setup environment variables
+        run: |
+          cat > .env.test << EOF
+          NODE_ENV=test
+          DATABASE_URL=postgresql://keenvpn:keenvpn_test_password@localhost:5432/keenvpn_test
+          JWT_SECRET=test_jwt_secret_min_32_characters_long_for_testing
+          FIREBASE_PROJECT_ID=test-project-id
+          FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nTEST_KEY\n-----END PRIVATE KEY-----\n"
+          FIREBASE_CLIENT_EMAIL=test@test-project.iam.gserviceaccount.com
+          STRIPE_SECRET_KEY=sk_test_mock_key
+          STRIPE_WEBHOOK_SECRET=whsec_test_mock_secret
+          STRIPE_PRICE_ID=price_test_mock_id
+          PLAN_PRICE=100.00
+          PLAN_NAME=Premium VPN - Annual
+          PORT=3001
+          TUNNELTO_ENABLED=false
+          EOF
 
-            - name: Generate Prisma Client
-              run: npx prisma generate
+      - name: Generate Prisma Client
+        run: npx prisma generate
 
-            - name: Run database migrations
-              run: npx prisma migrate deploy
-              env:
-                  DATABASE_URL: postgresql://keenvpn:keenvpn_test_password@localhost:5432/keenvpn_test
+      - name: Run database migrations
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://keenvpn:keenvpn_test_password@localhost:5432/keenvpn_test
 
-            - name: Run integration tests
-              run: npm run test:integration
-              env:
-                  DATABASE_URL: postgresql://keenvpn:keenvpn_test_password@localhost:5432/keenvpn_test
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          DATABASE_URL: postgresql://keenvpn:keenvpn_test_password@localhost:5432/keenvpn_test
 
-            - name: Generate coverage report
-              run: npm run test:coverage
-              env:
-                  DATABASE_URL: postgresql://keenvpn:keenvpn_test_password@localhost:5432/keenvpn_test
+      - name: Generate coverage report
+        run: npm run test:coverage
+        env:
+          DATABASE_URL: postgresql://keenvpn:keenvpn_test_password@localhost:5432/keenvpn_test
 
-            - name: Upload coverage to Codecov
-              uses: codecov/codecov-action@v3
-              with:
-                  files: ./coverage/lcov.info
-                  flags: integration-tests
-                  name: integration-tests-coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/lcov.info
+          flags: integration-tests
+          name: integration-tests-coverage
 
-            - name: Upload test results
-              if: always()
-              uses: actions/upload-artifact@v4
-              with:
-                  name: test-results
-                  path: |
-                      coverage/
-                      test-results/
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            coverage/
+            test-results/
 
-            - name: Comment test results on PR
-              if: github.event_name == 'pull_request'
-              uses: actions/github-script@v7
-              with:
-                  script: |
-                      const fs = require('fs');
-                      const coverage = fs.existsSync('coverage/coverage-summary.json') 
-                        ? JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'))
-                        : null;
+      - name: Comment test results on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const coverage = fs.existsSync('coverage/coverage-summary.json') 
+              ? JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'))
+              : null;
 
-                      let comment = '## Integration Test Results\n\n';
-                      comment += '✅ All integration tests passed!\n\n';
+            let comment = '## Integration Test Results\n\n';
+            comment += '✅ All integration tests passed!\n\n';
 
-                      if (coverage) {
-                        const total = coverage.total;
-                        comment += '### Coverage Summary\n\n';
-                        comment += `- **Lines**: ${total.lines.pct}%\n`;
-                        comment += `- **Statements**: ${total.statements.pct}%\n`;
-                        comment += `- **Functions**: ${total.functions.pct}%\n`;
-                        comment += `- **Branches**: ${total.branches.pct}%\n`;
-                      }
+            if (coverage) {
+              const total = coverage.total;
+              comment += '### Coverage Summary\n\n';
+              comment += `- **Lines**: ${total.lines.pct}%\n`;
+              comment += `- **Statements**: ${total.statements.pct}%\n`;
+              comment += `- **Functions**: ${total.functions.pct}%\n`;
+              comment += `- **Branches**: ${total.branches.pct}%\n`;
+            }
 
-                      github.rest.issues.createComment({
-                        issue_number: context.issue.number,
-                        owner: context.repo.owner,
-                        repo: context.repo.repo,
-                        body: comment
-                      });
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
