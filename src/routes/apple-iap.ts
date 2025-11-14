@@ -247,6 +247,10 @@ router.post(
       } as ApiResponse);
     } catch (error) {
       console.error("❌ Apple IAP link error:", error);
+      console.error(
+        "❌ Error details:",
+        error instanceof Error ? error.stack : error
+      );
       res.status(500).json({
         success: false,
         error: "Failed to link Apple IAP purchase",

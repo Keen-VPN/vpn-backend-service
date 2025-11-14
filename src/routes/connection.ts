@@ -29,11 +29,17 @@ router.post("/session", async (req: Request, res: Response): Promise<void> => {
       heartbeat_timestamp,
     } = req.body;
 
-    // Validate required fields
-    if (!session_start || !duration_seconds || !platform) {
+    // Validate required fields (duration_seconds can be 0 for SESSION_START)
+    if (
+      !session_start ||
+      duration_seconds === undefined ||
+      duration_seconds === null ||
+      !platform
+    ) {
       console.error("❌ Invalid payload - Missing required fields:", {
         session_start: !!session_start,
-        duration_seconds: !!duration_seconds,
+        duration_seconds:
+          duration_seconds !== undefined && duration_seconds !== null,
         platform: !!platform,
         received_body: JSON.stringify(req.body),
       });
@@ -213,7 +219,7 @@ router.get(
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
 
-      // Find user by email or Firebase UID
+      // Find user by email, Firebase UID, or user ID
       const userModel = new User();
       let user = null;
 
@@ -222,7 +228,13 @@ router.get(
       }
 
       if (!user) {
+        // Try Firebase UID
         user = await userModel.findByFirebaseUid(identifier);
+      }
+
+      if (!user) {
+        // Try user ID (UUID)
+        user = await userModel.findById(identifier);
       }
 
       if (!user) {
@@ -242,12 +254,22 @@ router.get(
         ascending: false,
       });
 
+      // Convert BigInt to string for JSON serialization
+      const serializedSessions = sessions.map((session) => ({
+        ...session,
+        bytesTransferred: session.bytesTransferred?.toString(),
+      }));
+
       res.json({
         success: true,
-        data: sessions,
+        data: serializedSessions,
       } as ApiResponse);
     } catch (error) {
       console.error("Error in get sessions endpoint:", error);
+      console.error(
+        "Error details:",
+        error instanceof Error ? error.stack : error
+      );
       res.status(500).json({
         success: false,
         error: "Internal server error",
@@ -271,7 +293,7 @@ router.get(
         return;
       }
 
-      // Find user by email or Firebase UID
+      // Find user by email, Firebase UID, or user ID
       const userModel = new User();
       let user = null;
 
@@ -280,7 +302,13 @@ router.get(
       }
 
       if (!user) {
+        // Try Firebase UID
         user = await userModel.findByFirebaseUid(identifier);
+      }
+
+      if (!user) {
+        // Try user ID (UUID)
+        user = await userModel.findById(identifier);
       }
 
       if (!user) {
