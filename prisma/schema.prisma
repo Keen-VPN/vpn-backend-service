@@ -141,11 +141,33 @@ model SessionAggregate {
   @@map("session_aggregates")
 }
 
+model ProcessedSession {
+  id                      String   @id @default(uuid())
+  sessionId               String   @unique @map("session_id")
+  userId                  String   @map("user_id")
+  dataConsumed            Decimal  @map("data_consumed") @db.Decimal(15, 2)
+  averageSessionBandwidth Decimal  @map("average_session_bandwidth") @db.Decimal(15, 2)
+  sessionDuration         Decimal  @map("session_duration") @db.Decimal(10, 2)
+  startedAt               DateTime @map("started_at") @db.Timestamptz
+  endedAt                 DateTime @map("ended_at") @db.Timestamptz
+  terminationReason       String   @map("termination_reason")
+  serverLocation          String?  @map("server_location")
+  processedAt             DateTime @default(now()) @map("processed_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([startedAt])
+  @@index([endedAt])
+  @@index([serverLocation])
+  @@index([terminationReason])
+  @@index([processedAt])
+  @@map("processed_sessions")
+}
+
 model VpnConfig {
   id        String   @id @default(uuid())
   version   String   @unique
   payload   Json
-  etag      String?
+  etag      String?  @map("etag")
   isActive  Boolean  @default(false) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
