@@ -38,7 +38,9 @@
     "migrate:data": "tsx scripts/migrate-data.ts",
     "verify:migration": "tsx scripts/verify-migration.ts",
     "db:export": "tsx export-data-from-supabase.ts",
-    "db:import": "tsx import-data-to-new-db.ts"
+    "db:import": "tsx import-data-to-new-db.ts",
+    "seed:vpn-config": "tsx prisma/seed-vpn-config.ts",
+    "seed:vpn-config-demo": "tsx prisma/seed-vpn-config-demo.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.17.0",
@@ -47,6 +49,7 @@
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^20.10.6",
+    "@types/node-cron": "^3.0.11",
     "@types/node-fetch": "^2.6.9",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -56,6 +59,7 @@
     "firebase-admin": "^11.11.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
+    "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
     "prisma": "^6.17.0",
     "serverless-http": "^3.2.0",
