@@ -127,6 +127,52 @@ export function generateValidAppleIdentityToken(): string {
   return `${header}.${payload}.${signature}`;
 }
 
+export function generateValidAppleFirebaseToken(): string {
+  // Generate a proper JWT that the Firebase mock will recognize
+  // The jest.setup.ts mock will catch "valid-apple-firebase-token" and return the appropriate user data
+  const header = Buffer.from(
+    JSON.stringify({ alg: "RS256", kid: "test" })
+  ).toString("base64");
+  const payload = Buffer.from(
+    JSON.stringify({
+      iss: "https://securetoken.google.com/test-project",
+      aud: "test-project",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      iat: Math.floor(Date.now() / 1000),
+      sub: "apple-firebase-uid-123",
+      uid: "apple-firebase-uid-123",
+      email: "apple@privaterelay.appleid.com",
+      email_verified: true,
+    })
+  ).toString("base64");
+  const signature = Buffer.from("test-firebase-signature").toString("base64");
+
+  return `${header}.${payload}.${signature}`;
+}
+
+export function generateValidGoogleFirebaseToken(): string {
+  // Generate a proper Firebase JWT for Google sign-in
+  const header = Buffer.from(
+    JSON.stringify({ alg: "RS256", kid: "test" })
+  ).toString("base64");
+  const payload = Buffer.from(
+    JSON.stringify({
+      iss: "https://securetoken.google.com/test-project",
+      aud: "test-project",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      iat: Math.floor(Date.now() / 1000),
+      sub: "firebase-test-uid-123",
+      uid: "firebase-test-uid-123",
+      email: "firebase@example.com",
+      name: "Firebase User",
+      email_verified: true,
+    })
+  ).toString("base64");
+  const signature = Buffer.from("test-firebase-signature").toString("base64");
+
+  return `${header}.${payload}.${signature}`;
+}
+
 export function generateInvalidToken(): string {
   return "invalid-token-" + faker.string.alphanumeric(20);
 }

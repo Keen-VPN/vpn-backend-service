@@ -226,9 +226,9 @@ describe("Connection Routes Integration Tests", () => {
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
       expect(response.body.data).toBeDefined();
-      expect(response.body.data.totalSessions).toBe(2);
-      expect(response.body.data.totalDuration).toBeGreaterThan(0);
-      expect(response.body.data.totalBytes).toBeDefined();
+      expect(response.body.data.total_sessions).toBe(2);
+      expect(response.body.data.total_duration_seconds).toBeGreaterThan(0);
+      expect(response.body.data.total_bytes_transferred).toBeDefined();
     });
 
     it("should return zero stats for user with no sessions", async () => {
@@ -240,8 +240,8 @@ describe("Connection Routes Integration Tests", () => {
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.data.totalSessions).toBe(0);
-      expect(response.body.data.totalDuration).toBe(0);
+      expect(response.body.data.total_sessions).toBe(0);
+      expect(response.body.data.total_duration_seconds).toBe(0);
     });
 
     it("should aggregate data by platform", async () => {
@@ -256,7 +256,7 @@ describe("Connection Routes Integration Tests", () => {
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.data.byPlatform).toBeDefined();
+      expect(response.body.data.platform_breakdown).toBeDefined();
     });
 
     it("should return 404 for non-existent user", async () => {

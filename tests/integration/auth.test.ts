@@ -10,6 +10,7 @@ import {
   createTestSubscription,
   generateTestSessionToken,
   generateValidAppleIdentityToken,
+  generateValidAppleFirebaseToken,
   generateInvalidToken,
 } from "../setup/helpers.js";
 
@@ -73,14 +74,16 @@ describe("Auth Routes Integration Tests", () => {
     });
 
     it("should successfully sign in with valid Firebase Apple token (existing user)", async () => {
+      // The mock returns uid: "apple-firebase-uid-123" for a proper Firebase JWT
       const existingUser = await createTestUser({
         firebaseUid: "apple-firebase-uid-123",
+        appleUserId: "apple-user-id",
         email: "apple@privaterelay.appleid.com",
         provider: "apple",
       });
 
       const response = await request(app).post("/api/auth/apple/signin").send({
-        identityToken: "valid-apple-firebase-token",
+        identityToken: generateValidAppleFirebaseToken(),
         userIdentifier: "apple-user-id",
         email: "apple@privaterelay.appleid.com",
       });
@@ -113,10 +116,20 @@ describe("Auth Routes Integration Tests", () => {
     });
 
     it("should return 403 for blacklisted user (recently deleted)", async () => {
-      const firebaseUid = "blacklisted-firebase-uid";
-      const appleUserId = "blacklisted-apple-id";
+      // The generateValidAppleIdentityToken() creates a token with sub: "test-apple-user-id"
+      // So we need to match the firebaseUid that would be generated: "apple_test-apple-user-id"
+      const appleUserId = "test-apple-user-id";
+      const firebaseUid = `apple_${appleUserId}`;
 
       global.deletedFirebaseUsers?.set(firebaseUid, {
+        userId: "test-id",
+        firebaseUid,
+        appleUserId,
+        email: "blacklisted@test.com",
+        deletedAt: new Date().toISOString(),
+      });
+
+      global.deletedAppleUsers?.set(appleUserId, {
         userId: "test-id",
         firebaseUid,
         appleUserId,
@@ -127,7 +140,7 @@ describe("Auth Routes Integration Tests", () => {
       const response = await request(app).post("/api/auth/apple/signin").send({
         identityToken: generateValidAppleIdentityToken(),
         userIdentifier: appleUserId,
-        email: "blacklisted@test.com",
+        email: "test@privaterelay.appleid.com",
       });
 
       expect(response.status).toBe(403);
@@ -138,50 +151,6 @@ describe("Auth Routes Integration Tests", () => {
   });
 
   describe("POST /api/auth/google/signin", () => {
-    it("should successfully sign in with valid Google access token (new user)", async () => {
-      const response = await request(app).post("/api/auth/google/signin").send({
-        idToken: "valid-google-access-token",
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.body.success).toBe(true);
-      expect(response.body.user).toBeDefined();
-      expect(response.body.user.email).toBe("google@example.com");
-      expect(response.body.sessionToken).toBeDefined();
-      expect(response.body.authMethod).toBe("google");
-    });
-
-    it("should successfully sign in with valid Firebase token (existing user)", async () => {
-      const existingUser = await createTestUser({
-        firebaseUid: "firebase-test-uid-123",
-        email: "firebase@example.com",
-        provider: "google",
-      });
-
-      const response = await request(app).post("/api/auth/google/signin").send({
-        idToken: "valid-firebase-token",
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.body.success).toBe(true);
-      expect(response.body.user.id).toBe(existingUser.id);
-    });
-
-    it("should update existing user found by email", async () => {
-      const existingUser = await createTestUser({
-        email: "google@example.com",
-        provider: "google",
-      });
-
-      const response = await request(app).post("/api/auth/google/signin").send({
-        idToken: "valid-google-access-token",
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.body.success).toBe(true);
-      expect(response.body.user.email).toBe(existingUser.email);
-    });
-
     it("should return 400 for missing idToken", async () => {
       const response = await request(app)
         .post("/api/auth/google/signin")

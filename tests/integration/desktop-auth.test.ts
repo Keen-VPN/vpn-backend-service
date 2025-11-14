@@ -253,7 +253,7 @@ describe("Desktop Auth Routes Integration Tests", () => {
 
       const { code } = generateResponse.body;
 
-      await request(app).post("/api/desktop-auth/exchange-code").send({
+      await request(app).post("/api/desktop-auth/exchange").send({
         code,
         codeVerifier,
       });

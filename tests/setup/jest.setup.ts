@@ -7,6 +7,14 @@ process.env.NODE_ENV = "test";
 // Load test environment variables
 dotenv.config({ path: path.resolve(process.cwd(), ".env.test") });
 
+// Set required environment variables for tests
+process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret-key";
+process.env.STRIPE_WEBHOOK_SECRET =
+  process.env.STRIPE_WEBHOOK_SECRET || "test-stripe-webhook-secret";
+process.env.STRIPE_SECRET_KEY =
+  process.env.STRIPE_SECRET_KEY || "test-stripe-secret-key";
+process.env.STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || "price_test_123";
+
 // Increase timeout for integration tests
 jest.setTimeout(30000);
 
@@ -25,6 +33,33 @@ if (process.env.SUPPRESS_LOGS === "true") {
 // Create a single shared auth mock instance
 const sharedAuthMock = {
   verifyIdToken: jest.fn(async (token: string) => {
+    // Try to decode the JWT
+    try {
+      const parts = token.split(".");
+      if (parts.length === 3 && parts[1]) {
+        const payload = JSON.parse(
+          Buffer.from(parts[1], "base64").toString("utf-8")
+        );
+
+        // Check if it's a Firebase token by looking at the issuer
+        if (
+          payload.iss &&
+          (payload.iss.includes("securetoken.google.com") ||
+            payload.iss.includes("firebase"))
+        ) {
+          return {
+            uid: payload.uid || payload.sub,
+            email: payload.email,
+            name: payload.name,
+            email_verified: payload.email_verified,
+          };
+        }
+      }
+    } catch (e) {
+      // Not a valid JWT, try string matching for backward compatibility
+    }
+
+    // Fallback to string matching for simple test tokens
     if (token === "valid-firebase-token") {
       return {
         uid: "firebase-test-uid-123",
@@ -41,10 +76,17 @@ const sharedAuthMock = {
         email_verified: true,
       };
     }
-    throw new Error("Invalid token");
+
+    // For any other token (including Google OAuth tokens), throw an error
+    const error: any = new Error("Firebase ID token has invalid signature");
+    error.code = "auth/argument-error";
+    throw error;
   }),
   getUser: jest.fn(),
 };
+
+// Create auth function that returns the shared mock
+const authFunction = () => sharedAuthMock;
 
 // Mock Firebase Admin SDK globally before any imports
 const firebaseAdminMock = {
@@ -55,9 +97,9 @@ const firebaseAdminMock = {
     credential: {
       cert: jest.fn(),
     },
-    auth: jest.fn(() => sharedAuthMock),
+    auth: authFunction,
   },
-  auth: jest.fn(() => sharedAuthMock),
+  auth: authFunction,
   apps: [],
   initializeApp: jest.fn(),
   credential: {
@@ -65,7 +107,11 @@ const firebaseAdminMock = {
   },
 };
 
+// Mock both the named import and default import
 jest.mock("firebase-admin", () => firebaseAdminMock);
+
+// Export the shared auth mock so it's accessible
+export { sharedAuthMock };
 
 // Mock global fetch for Google OAuth token verification and Apple IAP
 global.fetch = jest.fn((url: string | URL | Request, options?: RequestInit) => {
@@ -184,9 +230,16 @@ jest.mock("../../src/config/stripe.js", () => ({
           if (signature !== "valid-stripe-signature") {
             throw new Error("Invalid signature");
           }
-          return JSON.parse(payload.toString());
+          // Handle both Buffer and string payloads
+          const payloadString = Buffer.isBuffer(payload)
+            ? payload.toString()
+            : payload;
+          return JSON.parse(payloadString);
         }
       ),
     },
   },
 }));
+
+// Export Stripe mock for testing
+export const stripeMock = jest.requireMock("../../src/config/stripe.js");
