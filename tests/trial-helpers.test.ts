@@ -27,3 +27,4 @@ describe('trial helper utilities', () => {
     assert.equal(remaining, 0);
   });
 });
+

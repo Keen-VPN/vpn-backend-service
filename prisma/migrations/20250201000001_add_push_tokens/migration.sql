@@ -13,3 +13,4 @@ CREATE TABLE IF NOT EXISTS "push_tokens" (
 );
 
 CREATE INDEX IF NOT EXISTS "push_tokens_user_id_idx" ON "push_tokens" ("user_id");
+

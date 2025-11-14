@@ -46,24 +46,28 @@ class AppleIAPPurchaseModel {
       receiptData,
     } = input;
 
-    const existing = await prisma.appleIAPPurchase.findUnique({
+    const existingByOriginal = await prisma.appleIAPPurchase.findUnique({
       where: { originalTransactionId },
     });
 
-    if (existing) {
+    if (existingByOriginal) {
       const earliestPurchase =
-        existing.purchaseDate && existing.purchaseDate < purchaseDate
-          ? existing.purchaseDate
+        existingByOriginal.purchaseDate &&
+        existingByOriginal.purchaseDate < purchaseDate
+          ? existingByOriginal.purchaseDate
           : purchaseDate;
 
-      let resolvedExpiresDate = expiresDate ?? existing.expiresDate;
-      if (expiresDate && existing.expiresDate) {
+      let resolvedExpiresDate =
+        expiresDate ?? existingByOriginal.expiresDate;
+      if (expiresDate && existingByOriginal.expiresDate) {
         resolvedExpiresDate =
-          expiresDate > existing.expiresDate ? expiresDate : existing.expiresDate;
+          expiresDate > existingByOriginal.expiresDate
+            ? expiresDate
+            : existingByOriginal.expiresDate;
       }
 
       const resolvedEnvironment =
-        environment ?? existing.environment ?? null;
+        environment ?? existingByOriginal.environment ?? null;
 
       const update = await prisma.appleIAPPurchase.update({
         where: { originalTransactionId },
@@ -73,7 +77,50 @@ class AppleIAPPurchaseModel {
           environment: resolvedEnvironment,
           purchaseDate: earliestPurchase,
           expiresDate: resolvedExpiresDate,
-          receiptData: receiptData ?? existing.receiptData,
+          receiptData: receiptData ?? existingByOriginal.receiptData,
+        },
+      });
+
+      return ledgerEntryFromRecord(update);
+    }
+
+    const existingByTransaction = await prisma.appleIAPPurchase.findUnique({
+      where: { transactionId },
+    });
+
+    if (existingByTransaction) {
+      const earliestPurchase =
+        existingByTransaction.purchaseDate &&
+        existingByTransaction.purchaseDate < purchaseDate
+          ? existingByTransaction.purchaseDate
+          : purchaseDate;
+
+      let resolvedExpiresDate = expiresDate ?? existingByTransaction.expiresDate;
+      if (expiresDate && existingByTransaction.expiresDate) {
+        resolvedExpiresDate =
+          expiresDate > existingByTransaction.expiresDate
+            ? expiresDate
+            : existingByTransaction.expiresDate;
+      }
+
+      const resolvedEnvironment =
+        environment ?? existingByTransaction.environment ?? null;
+
+      const resolvedOriginalTransactionId =
+        existingByTransaction.originalTransactionId &&
+        existingByTransaction.originalTransactionId !== originalTransactionId
+          ? existingByTransaction.originalTransactionId
+          : originalTransactionId;
+
+      const update = await prisma.appleIAPPurchase.update({
+        where: { transactionId },
+        data: {
+          originalTransactionId: resolvedOriginalTransactionId,
+          productId,
+          environment: resolvedEnvironment,
+          purchaseDate: earliestPurchase,
+          expiresDate: resolvedExpiresDate,
+          receiptData: receiptData ?? existingByTransaction.receiptData,
         },
       });
 
