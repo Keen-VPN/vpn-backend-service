@@ -1,7 +1,15 @@
 import express, { Request, Response, Router } from "express";
 import { Prisma } from "@prisma/client";
 import VPNConfigModel from "../models/VPNConfig.js";
-import defaultConfigJson from "../config/default-vpn-config.json" assert { type: "json" };
+import { readFileSync } from "fs";
+import path from "path";
+// Use a relative path approach that works in both production and test environments
+const defaultConfigJson = JSON.parse(
+  readFileSync(
+    path.resolve(process.cwd(), "src/config/default-vpn-config.json"),
+    "utf-8"
+  )
+);
 import { generateWeakEtag } from "../utils/etag.js";
 import type {
   RemoteVPNConfig,
@@ -81,7 +89,9 @@ function normalizeConfigDates(config: RemoteVPNConfig): RemoteVPNConfig {
 
       const attempt = (input: string): string | undefined => {
         const parsed = new Date(input);
-        return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+        return Number.isNaN(parsed.getTime())
+          ? undefined
+          : parsed.toISOString();
       };
 
       // First try the raw value.
@@ -508,4 +518,3 @@ router.delete(
 );
 
 export default router;
-

@@ -10,7 +10,7 @@ function mapPrismaConfig(record: PrismaVpnConfig): VPNConfigRecord {
     id: record.id,
     version: record.version,
     payload: record.payload as unknown as RemoteVPNConfig,
-    etag: record.etag,
+    etag: record.etag || '', // Handle null case by providing empty string fallback
     isActive: record.isActive,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,

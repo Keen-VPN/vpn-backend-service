@@ -744,7 +744,7 @@ process.on(
 // Export app for serverless deployment (Netlify Functions)
 export { app };
 
-// Only start server if not in serverless environment
-if (process.env.NETLIFY !== "true") {
+// Only start server if not in serverless or test environment
+if (process.env.NETLIFY !== "true" && process.env.NODE_ENV !== "test") {
   startServer();
 }
