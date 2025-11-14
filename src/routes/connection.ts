@@ -6,6 +6,7 @@ import type {
   TerminationReason,
   EventType,
 } from "../types/index.js";
+import { verifyPermanentSessionToken } from "../utils/auth.js";
 
 const router: Router = express.Router();
 
@@ -28,6 +29,7 @@ router.post("/session", async (req: Request, res: Response): Promise<void> => {
       event_type,
       heartbeat_timestamp,
     } = req.body;
+
 
     // Validate required fields
     if (!session_start || !duration_seconds || !platform) {
@@ -116,33 +118,68 @@ router.post("/session", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Find user
+    // Find user - try session token first (most reliable), then email, then firebase_uid
     const userModel = new User();
     let user = null;
 
-    if (email && email.trim() !== "") {
+    // Try session token from Authorization header or request body
+    const authHeader = req.headers.authorization;
+    const sessionToken = 
+      (authHeader && authHeader.startsWith("Bearer ")) 
+        ? authHeader.replace("Bearer ", "")
+        : req.body.sessionToken;
+
+    if (sessionToken) {
+      console.log(`🔍 Verifying session token...`);
+      const tokenPayload = verifyPermanentSessionToken(sessionToken);
+      if (tokenPayload) {
+        console.log(`✅ Session token verified for user: ${tokenPayload.userId}`);
+        user = await userModel.findById(tokenPayload.userId);
+        if (user) {
+          console.log(`✅ User found by session token: ${user.id}`);
+        } else {
+          console.log(`❌ User not found by session token user ID: ${tokenPayload.userId}`);
+        }
+      } else {
+        console.log(`❌ Invalid session token`);
+      }
+    }
+
+    // Fallback to email lookup
+    if (!user && email && email.trim() !== "") {
       console.log(`🔍 Looking up user by email: ${email}`);
       user = await userModel.findByEmail(email);
       if (user) {
         console.log(`✅ User found by email: ${user.id}`);
+      } else {
+        console.log(`❌ User not found by email: ${email}`);
       }
     }
 
+    // Fallback to firebase_uid lookup
     if (!user && firebase_uid && firebase_uid.trim() !== "") {
       console.log(`🔍 Looking up user by firebase_uid: ${firebase_uid}`);
       user = await userModel.findByFirebaseUid(firebase_uid);
       if (user) {
         console.log(`✅ User found by firebase_uid: ${user.id}`);
+      } else {
+        console.log(`❌ User not found by firebase_uid: ${firebase_uid}`);
       }
     }
 
     if (!user) {
       console.error(
-        "❌ User lookup failed - cannot record session without user ID"
+        "❌ User lookup failed - cannot record session without user ID",
+        {
+          session_token_provided: !!sessionToken,
+          email_provided: !!email,
+          firebase_uid_provided: !!firebase_uid,
+          email_value: email || "none",
+        }
       );
       res.status(400).json({
         success: false,
-        error: "User not found. Please ensure you are properly authenticated.",
+        error: `User not found. Please ensure you are properly authenticated with a session token or valid email/Firebase UID.`,
       } as ApiResponse);
       return;
     }
@@ -187,7 +224,13 @@ router.post("/session", async (req: Request, res: Response): Promise<void> => {
       },
     } as ApiResponse);
   } catch (error) {
-    console.error("Error in connection session endpoint:", error);
+    console.error("❌ Error in connection session endpoint:", error);
+    if (error instanceof Error) {
+      console.error("Error details:", {
+        message: error.message,
+        stack: error.stack,
+      });
+    }
     res.status(500).json({
       success: false,
       error: "Internal server error",
