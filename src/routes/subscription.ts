@@ -5,6 +5,7 @@ import Subscription from "../models/Subscription.js";
 import { verifyPermanentSessionToken } from "../utils/auth.js";
 import {
   getSubscriptionPlans,
+  getPlanById,
   getPriceIdForPlan,
   getPlanName,
   getBillingPeriod,
@@ -34,6 +35,46 @@ router.get("/plans", async (_req: Request, res: Response): Promise<void> => {
     res.status(500).json({
       success: false,
       error: "Failed to get subscription plans",
+    } as ApiResponse);
+  }
+});
+
+// Get specific plan by ID
+router.get("/plan/:id", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      res.status(400).json({
+        success: false,
+        error: "Plan ID is required",
+      } as ApiResponse);
+      return;
+    }
+
+    console.log(`🔍 Getting plan details for: ${id}`);
+
+    const plan = getPlanById(id);
+
+    if (!plan) {
+      res.status(404).json({
+        success: false,
+        error: "Plan not found",
+      } as ApiResponse);
+      return;
+    }
+
+    const response: ApiResponse<{ plan: SubscriptionPlan }> = {
+      success: true,
+      data: { plan },
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error("Error getting plan by ID:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to get plan details",
     } as ApiResponse);
   }
 });
@@ -464,6 +505,7 @@ router.post(
             planId: planId,
             billingPeriod: billingPeriod,
           },
+          trial_period_days: 30, // 1 month free trial
         },
       });
 

@@ -131,6 +131,7 @@ export interface ConnectionStats {
 export interface SubscriptionPlan {
   id: "premium_monthly" | "premium_yearly";
   name: string;
+  description?: string;
   price: number;
   period: "month" | "year";
   interval: "month" | "year";
