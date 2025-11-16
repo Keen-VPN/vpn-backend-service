@@ -22,14 +22,16 @@ export function getSubscriptionPlans(): SubscriptionPlan[] {
   const annualPlanName = process.env.ANNUAL_PLAN_NAME || "Premium VPN - Annual";
   const monthlyPlanName =
     process.env.MONTHLY_PLAN_NAME || "Premium VPN - Monthly";
-  const planFeatures = process.env.PLAN_FEATURES
-    ? process.env.PLAN_FEATURES.split(",")
-    : [
-        "Unlimited bandwidth",
-        "Global servers",
-        "Premium support",
-        "No logs policy",
-      ];
+  const planFeatures = [
+    { name: "1 month free trial", included: true, highlighted: true },
+    { name: "Access to all server locations", included: true },
+    { name: "Unlimited bandwidth", included: true },
+    { name: "Military-grade encryption", included: true },
+    { name: "24/7 customer support", included: true },
+    { name: "No-log policy guaranteed", included: true },
+    { name: "Kill switch protection", included: true },
+    { name: "Priority support", included: false },
+  ];
 
   const plans: SubscriptionPlan[] = [
     {

@@ -135,7 +135,7 @@ export interface SubscriptionPlan {
   period: "month" | "year";
   interval: "month" | "year";
   billingPeriod: "month" | "year";
-  features: string[];
+  features: { name: string; included: boolean; highlighted?: boolean }[];
   priceId: string;
   checkoutLink?: string;
 }
