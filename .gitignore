@@ -46,3 +46,4 @@ backup*.sql
 # Cursor rules
 .cursorrules
 .env.test
+package-lock.json
