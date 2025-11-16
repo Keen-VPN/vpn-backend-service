@@ -11,8 +11,11 @@ import {
   getBillingPeriod,
 } from "../config/plans.js";
 import type { ApiResponse, SubscriptionPlan } from "../types/index.js";
+import { serializeTrialStatus } from "../utils/trial.js";
+import TrialService from "../services/TrialService.js";
 
 const router: Router = express.Router();
+const trialService = new TrialService();
 
 const SUCCESS_URL =
   process.env.CHECKOUT_SUCCESS_URL || "https://vpnkeen.com/success";
@@ -152,6 +155,9 @@ router.post(
       const hasActiveSubscription =
         activeSubscription !== null && activeSubscription.status === "active";
 
+      await trialService.expireIfNeeded(user.id);
+      const trialStatus = await trialService.status(user.id);
+
       res.json({
         success: true,
         subscription: {
@@ -163,6 +169,7 @@ router.post(
           subscriptionType: activeSubscription?.subscriptionType || "stripe",
         },
         hasActiveSubscription,
+        trial: serializeTrialStatus(trialStatus),
       } as ApiResponse);
     } catch (error) {
       console.error("Error getting subscription status with session:", error);
@@ -349,6 +356,18 @@ router.post(
         return;
       }
 
+      await trialService.expireIfNeeded(user.id);
+      const trialStatus = await trialService.status(user.id);
+      const trialEndsAt =
+        trialStatus.trialActive && trialStatus.trialEndsAt
+          ? trialStatus.trialEndsAt
+          : null;
+
+      const subscriptionData: Record<string, unknown> = {};
+      if (trialEndsAt && trialEndsAt > new Date()) {
+        subscriptionData.trial_end = Math.floor(trialEndsAt.getTime() / 1000);
+      }
+
       // Create Stripe Checkout Session
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ["card"],
@@ -367,7 +386,11 @@ router.post(
           plan: planName,
           planId: planId,
           billingPeriod: billingPeriod,
+          trialEndsAt: trialEndsAt?.toISOString() ?? "",
         },
+        subscription_data: Object.keys(subscriptionData).length
+          ? subscriptionData
+          : undefined,
       });
 
       res.json({
@@ -437,6 +460,26 @@ router.post(
         return;
       }
 
+      await trialService.expireIfNeeded(user.id);
+      const trialStatus = await trialService.status(user.id);
+      const trialEndsAt =
+        trialStatus.trialActive && trialStatus.trialEndsAt
+          ? trialStatus.trialEndsAt
+          : null;
+
+      const subscriptionData: Record<string, unknown> = {
+        metadata: {
+          userId: user.id,
+          email: user.email,
+        },
+      };
+
+      if (trialEndsAt && trialEndsAt > new Date()) {
+        (subscriptionData as any).trial_end = Math.floor(
+          trialEndsAt.getTime() / 1000
+        );
+      }
+
       // Create or retrieve Stripe customer
       let stripeCustomerId = user.stripeCustomerId;
 
@@ -488,7 +531,7 @@ router.post(
             quantity: 1,
           },
         ],
-        success_url: `${SUCCESS_URL}?session_id={CHECKOUT_SESSION_ID}`,
+        success_url: SUCCESS_URL,
         cancel_url: CANCEL_URL,
         metadata: {
           userId: user.id,
@@ -496,6 +539,7 @@ router.post(
           plan: planName,
           planId: planId,
           billingPeriod: billingPeriod,
+          trialEndsAt: trialEndsAt?.toISOString() ?? "",
         },
         subscription_data: {
           metadata: {
@@ -507,6 +551,7 @@ router.post(
           },
           trial_period_days: 30, // 1 month free trial
         },
+
       });
 
       console.log("✅ Checkout session created:", session.id);

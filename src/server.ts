@@ -12,6 +12,7 @@ import subscriptionRoutes from "./routes/subscription.js";
 import connectionRoutes from "./routes/connection.js";
 import desktopAuthRoutes from "./routes/desktop-auth.js";
 import appleIAPRoutes from "./routes/apple-iap.js";
+import notificationsRoutes from "./routes/notifications.js";
 import configRoutes from "./routes/config.js";
 import stripe from "./config/stripe.js";
 import "./config/firebase.js"; // Initialize Firebase
@@ -22,9 +23,13 @@ import CronJobService from "./services/cronService.js";
 import SessionProcessingService from "./services/sessionProcessing.js";
 import type Stripe from "stripe";
 import { createTunnelManager } from "./utils/tunnel.js";
+import TrialService from "./services/TrialService.js";
+import { requirePaidOrTrial } from "./middleware/requirePaidOrTrial.js";
+import { serializeTrialStatus } from "./utils/trial.js";
 
 const app: Express = express();
 const PORT = parseInt(process.env.PORT || "3001", 10);
+const trialService = new TrialService();
 
 // Initialize tunnel manager
 const tunnelManager = createTunnelManager();
@@ -436,7 +441,52 @@ app.use("/api/subscription", subscriptionRoutes);
 app.use("/api/connection", connectionRoutes);
 app.use("/api/desktop-auth", desktopAuthRoutes);
 app.use("/api/apple-iap", appleIAPRoutes);
+app.use("/api/notifications", notificationsRoutes);
 app.use("/api/config", configRoutes);
+
+app.get(
+  "/api/me/subscription",
+  requirePaidOrTrial,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = (req as any).authUserId as string;
+      const trialStatus =
+        ((req as any).trialStatus as Awaited<
+          ReturnType<TrialService["status"]>
+        > | null) || (await trialService.status(userId));
+
+      const subscriptionModel = new Subscription();
+      const activeSubscription = await subscriptionModel.findActiveByUserId(
+        userId
+      );
+
+      res.json({
+        success: true,
+        data: {
+          userId,
+          trial: serializeTrialStatus(trialStatus),
+          subscription: activeSubscription
+            ? {
+                id: activeSubscription.id,
+                status: activeSubscription.status,
+                planName: activeSubscription.planName,
+                currentPeriodEnd:
+                  activeSubscription.currentPeriodEnd?.toISOString() ?? null,
+                cancelAtPeriodEnd: activeSubscription.cancelAtPeriodEnd,
+                subscriptionType: activeSubscription.subscriptionType,
+              }
+            : null,
+        },
+      });
+    } catch (error) {
+      console.error("❌ Failed to fetch subscription summary:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to load subscription summary",
+      });
+    }
+  }
+);
 
 // Manual session processing endpoint (for admin/testing)
 app.post("/api/admin/process-sessions", async (req: Request, res: Response): Promise<void> => {

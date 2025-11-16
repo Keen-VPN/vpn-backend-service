@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { generatePermanentSessionToken } from "../utils/auth.js";
 import User from "../models/User.js";
 import type { ApiResponse, SessionTokenPayload } from "../types/index.js";
+import { requirePaidOrTrial } from "../middleware/requirePaidOrTrial.js";
 
 const router: Router = express.Router();
 
@@ -36,6 +37,7 @@ setInterval(() => {
  */
 router.post(
   "/generate-code",
+  requirePaidOrTrial,
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { sessionToken, codeChallenge, deviceId } = req.body;
