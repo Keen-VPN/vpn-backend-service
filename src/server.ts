@@ -380,6 +380,29 @@ async function handleSubscriptionCreatedOrUpdated(
 
     console.log(`✅ Created new subscription record for user: ${user.id}, Stripe subscription: ${subscription.id}`);
 
+    // Grant trial if user is eligible (trials only granted when subscribing, one-time only)
+    // The trial service's existingGrant check ensures trials are only granted once per user
+    try {
+      const fullUser = await userModel.findById(user.id);
+      if (fullUser) {
+        const trialResult = await trialService.grantIfEligible(fullUser, null);
+        if (trialResult.granted) {
+          console.log('✅ Trial granted on Stripe subscription:', {
+            userId: trialResult.userId,
+            trialEndsAt: trialResult.trialEndsAt?.toISOString()
+          });
+        } else {
+          console.log('ℹ️ Trial not granted (may already have one or not eligible):', {
+            userId: trialResult.userId,
+            reason: trialResult.reason
+          });
+        }
+      }
+    } catch (trialError) {
+      // Don't fail subscription creation if trial grant fails
+      console.warn('⚠️ Failed to grant trial on Stripe subscription (non-fatal):', trialError);
+    }
+
     // If cancel_at_period_end is set, mark the new subscription for cancellation
     if (subscription.cancel_at_period_end) {
       const newSubscription = await subscriptionModel.findByStripeSubscriptionId(subscription.id);

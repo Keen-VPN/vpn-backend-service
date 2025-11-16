@@ -1,5 +1,5 @@
 import prisma from '../config/prisma.js';
-import type { Subscription as PrismaSubscription } from '@prisma/client';
+import { Prisma, type Subscription as PrismaSubscription } from '@prisma/client';
 import type { CreateSubscriptionData, UpdateSubscriptionData } from '../types/index.js';
 import type { 
   SubscriptionCreateData, 
@@ -48,6 +48,25 @@ class Subscription {
       console.log('✅ Subscription created successfully:', subscription.id);
       return subscription;
     } catch (error) {
+      // Handle unique constraint on apple_transaction_id gracefully to make linking idempotent
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002' &&
+        Array.isArray((error.meta as any)?.target) &&
+        (error.meta as any).target.includes('apple_transaction_id') &&
+        subscriptionData.appleTransactionId
+      ) {
+        console.warn(
+          '⚠️ Duplicate apple_transaction_id detected, returning existing subscription instead of failing'
+        );
+        const existing = await this.findByAppleTransactionId(
+          subscriptionData.appleTransactionId
+        );
+        if (existing) {
+          return existing;
+        }
+      }
+
       console.error('❌ Failed to create subscription:', error);
       throw error;
     }
@@ -115,13 +134,17 @@ class Subscription {
 
   /**
    * Find active subscription for a user
+   * Includes subscriptions with status "active" or "trialing" (introductory offer period)
+   * Note: Subscriptions are only marked "active" after actual billing occurs (renewal event)
    */
   async findActiveByUserId(userId: string): Promise<PrismaSubscription | null> {
     try {
       const subscription = await prisma.subscription.findFirst({
         where: {
           userId,
-          status: 'active',
+          status: {
+            in: ['active', 'trialing'] // Include both active and trialing subscriptions
+          },
           OR: [
             { currentPeriodEnd: null },
             { currentPeriodEnd: { gte: new Date() } }
@@ -132,7 +155,11 @@ class Subscription {
         }
       });
 
-      if (subscription?.currentPeriodEnd) {
+      if (!subscription) {
+        return null;
+      }
+
+      if (subscription.currentPeriodEnd) {
         const endDate = new Date(subscription.currentPeriodEnd);
         const now = new Date();
         if (endDate < now) {
@@ -140,6 +167,11 @@ class Subscription {
           return null;
         }
       }
+
+      // Note: We do NOT auto-transition "trialing" to "active" here
+      // Subscriptions are only marked "active" when we receive a billing event (renewal)
+      // For Apple IAP: Renewal transactions create new subscription records with "active" status
+      // For Stripe: Webhooks send "active" status when billing starts
 
       return subscription;
     } catch (error) {

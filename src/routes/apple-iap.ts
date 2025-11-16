@@ -12,8 +12,10 @@ import type {
 } from '../types/index.js';
 import type { SubscriptionWithAppleIAP } from '../types/subscription-types.js';
 import AppleIAPPurchaseModel from '../models/AppleIAPPurchase.js';
+import TrialService from '../services/TrialService.js';
 
 const router = express.Router();
+const trialService = new TrialService();
 
 // Apple's receipt verification URLs
 const APPLE_RECEIPT_URLS = {
@@ -639,6 +641,469 @@ router.post('/restore', async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({
       success: false,
       error: 'Failed to restore Apple IAP purchases'
+    } as ApiResponse);
+  }
+});
+
+/**
+ * Link Apple IAP purchases using transaction IDs (for already logged-in users)
+ * This is similar to what happens during sign-in, but can be called manually
+ */
+router.post('/link-with-transaction-ids', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { sessionToken, transactionIds } = req.body;
+
+    if (!sessionToken) {
+      res.status(400).json({
+        success: false,
+        error: 'Session token is required'
+      } as ApiResponse);
+      return;
+    }
+
+    if (!transactionIds || !Array.isArray(transactionIds) || transactionIds.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Transaction IDs array is required and must not be empty'
+      } as ApiResponse);
+      return;
+    }
+
+    console.log('🔗 Linking Apple IAP purchases with transaction IDs:', {
+      transactionCount: transactionIds.length,
+      transactionIds: JSON.stringify(transactionIds, null, 2)
+    });
+
+    // Verify session token
+    const userInfo = verifyPermanentSessionToken(sessionToken);
+    if (!userInfo) {
+      res.status(401).json({
+        success: false,
+        error: 'Invalid session token'
+      } as ApiResponse);
+      return;
+    }
+
+    const userModel = new User();
+    const subscriptionModel = new Subscription();
+    const appleIAPPurchaseModel = new AppleIAPPurchaseModel();
+
+    let user = await userModel.findById(userInfo.userId);
+
+    if (!user && process.env.NODE_ENV === 'development') {
+      if (userInfo.email) {
+        user = await userModel.findByEmail(userInfo.email);
+      }
+
+      if (!user) {
+        user = await userModel.findByFirebaseUid(userInfo.userId);
+      }
+    }
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        error: 'User not found'
+      } as ApiResponse);
+      return;
+    }
+
+    console.log('🔍 User found for IAP linking:', {
+      userId: user.id,
+      email: user.email,
+      appleUserId: user.appleUserId || 'null',
+      provider: user.provider
+    });
+
+    // Note: We allow IAP linking for any authenticated user, regardless of sign-in provider
+    // This allows users who signed in with Google/other methods to link Apple IAP purchases
+    // The appleUserId check is informational only
+    if (!user.appleUserId) {
+      console.log('ℹ️ User does not have appleUserId (provider: ' + (user.provider || 'unknown') + '), but allowing IAP linking anyway');
+    }
+
+    console.log(`🔄 Processing ${transactionIds.length} transaction(s) for linking...`);
+
+    let linkedCount = 0;
+    const linkedPurchases = [];
+    const errors = [];
+
+    for (const tx of transactionIds) {
+      console.log(`🔍 Processing transaction:`, {
+        transactionId: tx.transactionId,
+        originalTransactionId: tx.originalTransactionId,
+        productId: tx.productId
+      });
+      try {
+        if (!tx.transactionId || !tx.originalTransactionId || !tx.productId) {
+          errors.push({
+            transaction: tx,
+            error: 'Missing required fields: transactionId, originalTransactionId, productId'
+          });
+          continue;
+        }
+
+        // Find the purchase in our ledger, or capture it if not found
+        console.log(`🔍 Looking up purchase in ledger for originalTransactionId: ${tx.originalTransactionId}`);
+        let ledgerEntry = await appleIAPPurchaseModel.findByOriginalTransactionId(
+          tx.originalTransactionId
+        );
+
+        if (ledgerEntry) {
+          console.log(`📦 Found existing purchase in ledger:`, {
+            originalTransactionId: ledgerEntry.originalTransactionId,
+            linkedUserId: ledgerEntry.linkedUserId || 'null',
+            productId: ledgerEntry.productId
+          });
+        } else {
+          console.warn(
+            `⚠️ Purchase not found in ledger for originalTransactionId: ${tx.originalTransactionId}, attempting to capture it first`
+          );
+          
+          try {
+            ledgerEntry = await appleIAPPurchaseModel.recordCapture({
+              transactionId: tx.transactionId,
+              originalTransactionId: tx.originalTransactionId,
+              productId: tx.productId,
+              purchaseDate: new Date(),
+              expiresDate: null,
+              environment: null,
+              receiptData: null,
+            });
+            
+            console.log(
+              `✅ Captured purchase in ledger: ${tx.originalTransactionId}`
+            );
+          } catch (captureError) {
+            console.error(
+              `❌ Failed to capture purchase ${tx.originalTransactionId}:`,
+              captureError
+            );
+            errors.push({
+              transaction: tx,
+              error: `Failed to capture purchase: ${captureError instanceof Error ? captureError.message : String(captureError)}`
+            });
+            continue;
+          }
+        }
+        
+        if (!ledgerEntry) {
+          errors.push({
+            transaction: tx,
+            error: 'Could not find or capture purchase in ledger'
+          });
+          continue;
+        }
+
+        // Check if already linked to another user
+        if (ledgerEntry.linkedUserId && ledgerEntry.linkedUserId !== user.id) {
+          errors.push({
+            transaction: tx,
+            error: `Purchase already linked to another user: ${ledgerEntry.linkedUserId}`
+          });
+          continue;
+        }
+
+        // Create subscription from the purchase
+        const now = new Date();
+        const purchaseDate = new Date(ledgerEntry.purchaseDate);
+        
+        // Check if subscription already exists
+        // For renewals: Apple creates new transactionId but same originalTransactionId
+        // We should create a new subscription record for each billing period (renewal)
+        console.log(`🔍 Checking for existing subscription...`);
+        const existingByTransaction = await subscriptionModel.findByAppleTransactionId(
+          tx.transactionId
+        );
+        
+        // If subscription exists with this exact transactionId, skip (duplicate)
+        if (existingByTransaction) {
+          console.log(
+            `📦 Subscription already exists (by transactionId): ${existingByTransaction.id} for transaction: ${tx.transactionId}`
+          );
+          linkedPurchases.push({
+            transactionId: tx.transactionId,
+            originalTransactionId: tx.originalTransactionId,
+            productId: tx.productId,
+            status: 'already_linked'
+          });
+          continue;
+        }
+
+        // Check for existing subscription with same originalTransactionId and billing period
+        // If found, this is the same billing period (webhook retry or duplicate), skip
+        // If not found or different billing period, create new subscription (renewal)
+        const existingByOriginal = await subscriptionModel.findByAppleOriginalTransactionId(
+          tx.originalTransactionId
+        );
+        
+        if (existingByOriginal) {
+          // Check if this is the same billing period
+          const existingStart = existingByOriginal.currentPeriodStart 
+            ? new Date(existingByOriginal.currentPeriodStart)
+            : null;
+          const newStart = purchaseDate;
+          
+          // If billing periods match (within 1 day tolerance for timing differences), skip
+          if (existingStart && Math.abs(existingStart.getTime() - newStart.getTime()) < 24 * 60 * 60 * 1000) {
+            console.log(
+              `📦 Subscription already exists for same billing period: ${existingByOriginal.id} (period start: ${existingStart.toISOString()}), skipping creation`
+            );
+            linkedPurchases.push({
+              transactionId: tx.transactionId,
+              originalTransactionId: tx.originalTransactionId,
+              productId: tx.productId,
+              status: 'already_linked'
+            });
+            continue;
+          } else {
+            // Different billing period - this is a renewal (billing has occurred)
+            console.log(
+              `🔄 Renewal detected: Existing subscription ${existingByOriginal.id} has different billing period, creating new subscription record for renewal`
+            );
+            // Renewal means billing happened, so this subscription should be "active"
+          }
+        }
+        const expiresDate = ledgerEntry.expiresDate
+          ? new Date(ledgerEntry.expiresDate)
+          : null;
+        
+        // Determine subscription status:
+        // - "trialing": Initial subscription or renewal before trial period ends (introductory offer period)
+        // - "active": Renewal subscription after trial period has ended (billing has occurred)
+        // - "inactive": Expired
+        const isExpired = expiresDate ? expiresDate <= now : false;
+        
+        // Check if this is a renewal (different billing period from existing subscription)
+        const isRenewal = existingByOriginal !== null && existingByOriginal.currentPeriodStart 
+          ? Math.abs(new Date(existingByOriginal.currentPeriodStart).getTime() - purchaseDate.getTime()) >= 24 * 60 * 60 * 1000
+          : false;
+        
+        // If it's a renewal, check if the trial period has ended (30 days from initial purchase)
+        // Trial period ends 30 days after the FIRST subscription's purchase date
+        let trialPeriodEnded = false;
+        if (isRenewal && existingByOriginal) {
+          // Find the earliest subscription (initial purchase) with this originalTransactionId
+          // to calculate the true trial end date
+          const allSubscriptions = await subscriptionModel.findAllByUserId(user.id);
+          const subscriptionsWithSameOriginal = allSubscriptions.filter(
+            (sub: any) => sub.appleOriginalTransactionId === tx.originalTransactionId
+          );
+          
+          // Find the earliest subscription (initial purchase)
+          const firstSubscription = subscriptionsWithSameOriginal.length > 0
+            ? subscriptionsWithSameOriginal.reduce((earliest: any, current: any) => {
+                const earliestDate = earliest.currentPeriodStart ? new Date(earliest.currentPeriodStart) : new Date(0);
+                const currentDate = current.currentPeriodStart ? new Date(current.currentPeriodStart) : new Date(0);
+                return currentDate < earliestDate ? current : earliest;
+              })
+            : existingByOriginal;
+          
+          const firstPurchaseDate = firstSubscription.currentPeriodStart 
+            ? new Date(firstSubscription.currentPeriodStart)
+            : purchaseDate;
+          
+          // Trial period is 30 days from initial purchase
+          const trialEndDate = new Date(firstPurchaseDate);
+          trialEndDate.setDate(trialEndDate.getDate() + 30);
+          
+          // Check if current purchase date is after trial end date
+          trialPeriodEnded = purchaseDate >= trialEndDate;
+          
+          console.log(`🔍 Trial period check:`, {
+            firstPurchaseDate: firstPurchaseDate.toISOString(),
+            trialEndDate: trialEndDate.toISOString(),
+            currentPurchaseDate: purchaseDate.toISOString(),
+            trialPeriodEnded,
+            daysSinceTrialStart: Math.floor((purchaseDate.getTime() - firstPurchaseDate.getTime()) / (1000 * 60 * 60 * 24))
+          });
+        }
+        
+        let subscriptionStatus: 'trialing' | 'active' | 'inactive';
+        if (isExpired) {
+          subscriptionStatus = 'inactive';
+        } else if (isRenewal && trialPeriodEnded) {
+          // Renewal after trial period ended means billing occurred, so mark as "active"
+          subscriptionStatus = 'active';
+        } else {
+          // Initial subscription or renewal before trial ends: always "trialing"
+          subscriptionStatus = 'trialing';
+        }
+        
+        console.log(`📊 Subscription status determined: ${subscriptionStatus}`, {
+          isRenewal,
+          isExpired,
+          purchaseDate: purchaseDate.toISOString(),
+          expiresDate: expiresDate?.toISOString(),
+          existingSubscriptionId: existingByOriginal?.id
+        });
+
+        // Determine plan details from product ID
+        const planDetails = (() => {
+          const productId = tx.productId || ledgerEntry.productId;
+          if (productId.includes('monthly')) {
+            return {
+              planName: 'Premium VPN - Monthly',
+              billingPeriod: 'month' as const,
+              priceAmount: 12.99,
+            };
+          } else if (
+            productId.includes('annual') ||
+            productId.includes('yearly') ||
+            productId === 'com.keenvpn.premium'
+          ) {
+            return {
+              planName: 'Premium VPN - Annual',
+              billingPeriod: 'year' as const,
+              priceAmount: 119.99,
+            };
+          }
+          return {
+            planName: 'Premium VPN',
+            billingPeriod: 'year' as const,
+            priceAmount: 0,
+          };
+        })();
+
+        // Create subscription and mark as linked atomically with rollback
+        let createdSubscriptionId: string | null = null;
+        
+        try {
+          // Step 1: Create subscription
+          const newSubscription = await subscriptionModel.create({
+            userId: user.id,
+            subscriptionType: 'apple_iap',
+            appleTransactionId: tx.transactionId,
+            appleOriginalTransactionId: tx.originalTransactionId,
+            appleProductId: tx.productId || ledgerEntry.productId,
+            appleEnvironment: ledgerEntry.environment ?? undefined,
+            status: subscriptionStatus,
+            planId: tx.productId || ledgerEntry.productId,
+            planName: planDetails.planName,
+            priceAmount: planDetails.priceAmount,
+            priceCurrency: 'USD',
+            billingPeriod: planDetails.billingPeriod,
+            currentPeriodStart: purchaseDate,
+            currentPeriodEnd: expiresDate ?? undefined,
+            cancelAtPeriodEnd: false,
+          });
+          
+          createdSubscriptionId = newSubscription.id;
+          console.log(
+            `✅ Created subscription ${createdSubscriptionId} for transaction: ${tx.originalTransactionId}`
+          );
+
+          // Step 1.5: Grant trial if user is eligible (trials only granted when subscribing)
+          try {
+            const { default: User } = await import('../models/User.js');
+            const userModel = new User();
+            const fullUser = await userModel.findById(user.id);
+            if (fullUser) {
+              const trialResult = await trialService.grantIfEligible(fullUser, null);
+              if (trialResult.granted) {
+                console.log('✅ Trial granted on subscription:', {
+                  userId: trialResult.userId,
+                  trialEndsAt: trialResult.trialEndsAt?.toISOString()
+                });
+              }
+            }
+          } catch (trialError) {
+            // Don't fail subscription creation if trial grant fails
+            console.warn('⚠️ Failed to grant trial on subscription (non-fatal):', trialError);
+          }
+
+          // Step 2: Mark purchase as linked
+          try {
+            await appleIAPPurchaseModel.markLinked(
+              tx.originalTransactionId,
+              user.id,
+              user.email ?? null
+            );
+            
+            console.log(
+              `✅ Linked Apple IAP purchase to user ${user.id}: ${tx.originalTransactionId}`
+            );
+            
+            linkedCount++;
+            linkedPurchases.push({
+              transactionId: tx.transactionId,
+              originalTransactionId: tx.originalTransactionId,
+              productId: tx.productId,
+              status: 'linked',
+              subscriptionId: createdSubscriptionId
+            });
+          } catch (markLinkedError) {
+            // Rollback: Delete subscription if marking as linked fails
+            console.error(
+              `❌ Failed to mark purchase as linked, rolling back subscription creation:`,
+              markLinkedError
+            );
+            
+            try {
+              await subscriptionModel.delete(createdSubscriptionId);
+              console.log(
+                `✅ Rolled back: Deleted subscription ${createdSubscriptionId}`
+              );
+            } catch (deleteError) {
+              console.error(
+                `❌ Failed to rollback subscription ${createdSubscriptionId}:`,
+                deleteError
+              );
+              console.error(
+                `🚨 MANUAL CLEANUP NEEDED: Orphaned subscription ${createdSubscriptionId} for transaction ${tx.originalTransactionId}`
+              );
+            }
+            
+            errors.push({
+              transaction: tx,
+              error: `Failed to mark as linked: ${markLinkedError instanceof Error ? markLinkedError.message : String(markLinkedError)}`
+            });
+          }
+        } catch (linkError) {
+          console.error(
+            `❌ Failed to link purchase ${tx.originalTransactionId}:`,
+            linkError
+          );
+          
+          if (createdSubscriptionId) {
+            console.error(
+              `⚠️ Subscription ${createdSubscriptionId} may need manual cleanup`
+            );
+          }
+          
+          errors.push({
+            transaction: tx,
+            error: `Failed to create subscription: ${linkError instanceof Error ? linkError.message : String(linkError)}`
+          });
+        }
+      } catch (error) {
+        console.error(
+          `⚠️ Unexpected error processing transaction ${tx.originalTransactionId}:`,
+          error
+        );
+        errors.push({
+          transaction: tx,
+          error: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
+        });
+      }
+    }
+
+    console.log(`✅ Linked ${linkedCount} out of ${transactionIds.length} Apple IAP purchase(s)`);
+
+    res.status(200).json({
+      success: true,
+      message: `Linked ${linkedCount} purchase(s)`,
+      linkedCount,
+      totalCount: transactionIds.length,
+      linkedPurchases,
+      errors: errors.length > 0 ? errors : undefined
+    } as ApiResponse);
+
+  } catch (error) {
+    console.error('❌ Apple IAP link-with-transaction-ids error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to link Apple IAP purchases'
     } as ApiResponse);
   }
 });

@@ -147,13 +147,15 @@ router.post(
       }
 
       // Get active subscription from new subscriptions table
+      // This will automatically transition "trialing" to "active" after 30 days
       const activeSubscription = await subscriptionModel.findActiveByUserId(
         user.id
       );
 
-      // Check if subscription is active
+      // Check if subscription is active (includes both "active" and "trialing" status)
       const hasActiveSubscription =
-        activeSubscription !== null && activeSubscription.status === "active";
+        activeSubscription !== null && 
+        (activeSubscription.status === "active" || activeSubscription.status === "trialing");
 
       await trialService.expireIfNeeded(user.id);
       const trialStatus = await trialService.status(user.id);
