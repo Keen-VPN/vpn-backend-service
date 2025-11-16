@@ -150,7 +150,8 @@ FIREBASE_CLIENT_EMAIL=your-email@project.iam.gserviceaccount.com
 # Stripe
 STRIPE_SECRET_KEY=sk_test_your_key
 STRIPE_WEBHOOK_SECRET=whsec_your_secret
-STRIPE_PRICE_ID=price_your_price_id
+STRIPE_INDIVIDUAL_ANNUAL_PRICE_ID=your_price_id
+STRIPE_INDIVIDUAL_MONTHLY_PRICE_ID=your_price_id
 
 # JWT
 JWT_SECRET=your_jwt_secret_min_32_characters_long
@@ -659,7 +660,8 @@ Required in `.env`:
 DATABASE_URL="postgresql://..."
 JWT_SECRET="your-secret"
 STRIPE_SECRET_KEY="sk_..."
-STRIPE_PRICE_ID="price_..."
+STRIPE_INDIVIDUAL_ANNUAL_PRICE_ID="price_..."
+STRIPE_INDIVIDUAL_MONTHLY_PRICE_ID="price_..."
 PLAN_PRICE="100.00"
 PLAN_NAME="Premium VPN - Annual"
 CONFIG_ADMIN_TOKEN="super-secret-admin-token"
