@@ -7,6 +7,8 @@ import type {
   CaptureAppleIAPRequest,
   CaptureAppleIAPResponse,
   LinkAppleIAPRequest,
+  LinkAppleIAPResponseBody,
+  UpdateSubscriptionData,
 } from '../types/index.js';
 import type { SubscriptionWithAppleIAP } from '../types/subscription-types.js';
 import AppleIAPPurchaseModel from '../models/AppleIAPPurchase.js';

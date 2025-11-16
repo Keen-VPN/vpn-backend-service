@@ -28,6 +28,7 @@ model User {
   appleIAPPurchases  AppleIAPPurchase[]
   trialGrant         TrialGrant?
   deviceTrialFingerprints DeviceTrialFingerprint[]
+  pushTokens         PushToken[]
 
   @@map("users")
 }
@@ -98,11 +99,13 @@ model ConnectionSession {
   platform          String
   appVersion        String?           @map("app_version")
   bytesTransferred  BigInt            @default(0) @map("bytes_transferred")
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt @map("updated_at")
   isAnonymized      Boolean           @default(false) @map("is_anonymized")
   subscriptionTier  String?           @map("subscription_tier")
   terminationReason TerminationReason @default(USER_TERMINATION) @map("termination_reason")
+  eventType         EventType         @default(SESSION_START) @map("event_type")
+  heartbeatTimestamp DateTime?        @map("heartbeat_timestamp")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
   user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -112,6 +115,8 @@ model ConnectionSession {
   @@index([platform])
   @@index([serverLocation])
   @@index([terminationReason])
+  @@index([eventType])
+  @@index([heartbeatTimestamp])
   @@index([createdAt])
   @@index([isAnonymized])
   @@index([subscriptionTier])
@@ -201,6 +206,21 @@ model DeviceTrialFingerprint {
 
   @@map("trial_device_fingerprints")
   @@index([userId], map: "trial_device_fingerprints_user_id")
+}
+
+model PushToken {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  token       String   @unique
+  deviceHash  String?  @map("device_hash")
+  platform    String?  @map("platform")
+  environment String?  @map("environment")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("push_tokens")
+  @@index([userId], map: "push_tokens_user_id")
 }
 
 enum TerminationReason {

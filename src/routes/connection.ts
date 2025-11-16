@@ -234,7 +234,7 @@ router.get(
         user = await userModel.findByFirebaseUid(identifier);
       }
 
-      if (!user) {
+      if (!user && identifier) {
         // Try user ID (UUID)
         user = await userModel.findById(identifier);
       }
@@ -324,9 +324,9 @@ router.get(
         user = await userModel.findByFirebaseUid(identifier);
       }
 
-      if (!user) {
+      if (!user && identifier) {
         // Try user ID (UUID)
-        user = await userModel.findById(identifier);
+        user = await userModel.findById(identifier as string);
       }
 
       if (!user) {

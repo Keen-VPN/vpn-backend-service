@@ -60,7 +60,7 @@ export default class NotificationService {
       return;
     }
 
-    const tokens = tokenRecords.map(({ token }) => token);
+    const tokens = tokenRecords.map(({ token }: { token: string }) => token);
 
     const multicast = await admin.messaging().sendEachForMulticast({
       tokens,
@@ -108,7 +108,7 @@ export default class NotificationService {
       return;
     }
 
-    const tokens = tokenRecords.map(({ token }) => token);
+    const tokens = tokenRecords.map(({ token }: { token: string }) => token);
 
     const multicast = await admin.messaging().sendEachForMulticast({
       tokens,
