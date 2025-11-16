@@ -127,6 +127,26 @@ export interface ConnectionStats {
   } | null;
 }
 
+// Subscription Plan types
+export interface SubscriptionPlan {
+  id: "premium_monthly" | "premium_yearly";
+  name: string;
+  price: number;
+  period: "month" | "year";
+  interval: "month" | "year";
+  billingPeriod: "month" | "year";
+  features: string[];
+  priceId: string;
+  checkoutLink?: string;
+}
+
+export interface CreateCheckoutSessionRequest {
+  sessionToken?: string;
+  idToken?: string;
+  email?: string;
+  planId: "premium_monthly" | "premium_yearly";
+}
+
 // API Response types
 export interface ApiResponse<T = any> {
   success: boolean;

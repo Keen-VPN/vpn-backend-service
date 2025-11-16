@@ -13,7 +13,8 @@ process.env.STRIPE_WEBHOOK_SECRET =
   process.env.STRIPE_WEBHOOK_SECRET || "test-stripe-webhook-secret";
 process.env.STRIPE_SECRET_KEY =
   process.env.STRIPE_SECRET_KEY || "test-stripe-secret-key";
-process.env.STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || "price_test_123";
+process.env.STRIPE_INDIVIDUAL_ANNUAL_PRICE_ID =
+  process.env.STRIPE_INDIVIDUAL_ANNUAL_PRICE_ID || "price_test_123";
 
 // Increase timeout for integration tests
 jest.setTimeout(30000);
