@@ -435,6 +435,15 @@ npm run prisma:push      # Push schema to database
 npm run type-check       # Check TypeScript types
 ```
 
+### Testing Commands
+
+```bash
+npm test                 # Run all integration tests
+npm run test:integration # Run integration tests only
+npm run test:watch       # Run tests in watch mode
+npm run test:coverage    # Generate coverage report
+```
+
 ### Docker Commands
 
 ```bash
@@ -671,6 +680,84 @@ See `env.example` for complete list.
 - **Stripe** - Payment processing
 - **JWT** - Authentication
 - **Tunnelto.dev** - Secure local development tunneling
+- **Jest & Supertest** - Integration testing framework
+- **GitHub Actions** - CI/CD automation
+
+---
+
+## 🧪 Testing
+
+KeenVPN Backend includes comprehensive integration testing with automated CI/CD via GitHub Actions.
+
+### Running Tests Locally
+
+1. **Setup test environment**:
+
+   ```bash
+   # Copy test environment template
+   cp .env.test.example .env.test
+
+   # Edit .env.test with test database credentials
+   # Never use production credentials!
+   ```
+
+2. **Setup test database**:
+
+   ```bash
+   # Using Docker (recommended)
+   docker-compose up -d postgres
+
+   # Or create local database
+   createdb keenvpn_test
+
+   # Run migrations
+   npx prisma migrate deploy
+   ```
+
+3. **Run tests**:
+
+   ```bash
+   # Run all integration tests
+   npm test
+
+   # Run with coverage report
+   npm run test:coverage
+
+   # Run in watch mode
+   npm run test:watch
+   ```
+
+### Test Coverage
+
+- **Auth Routes**: Apple/Google sign-in, session verification, account deletion
+- **Subscription Routes**: Plans, status, cancellation, Stripe webhooks
+- **Connection Routes**: Session tracking, statistics, heartbeats
+- **Desktop Auth**: PKCE flow, code generation/exchange
+- **Apple IAP**: Receipt verification, subscription management
+
+### CI/CD Integration
+
+Tests run automatically on:
+
+- Push to `main` or `develop` branches
+- Pull requests to `main` or `develop`
+
+The GitHub Actions workflow:
+
+1. Sets up PostgreSQL test database
+2. Runs all integration tests
+3. Generates coverage reports
+4. Comments results on PRs
+
+### Documentation
+
+See [TESTING.md](TESTING.md) for detailed testing guide including:
+
+- Writing new tests
+- Mocking strategies
+- Database management
+- Troubleshooting
+- Best practices
 
 ---
 
@@ -695,7 +782,9 @@ See `env.example` for complete list.
 - ✅ Docker containerization for consistent environments
 - ✅ Integrated tunnelto.dev for development
 - ✅ Standardized team development workflow
-- ✅ CI/CD ready with GitHub Actions
+- ✅ Comprehensive integration testing with Jest
+- ✅ Automated CI/CD pipeline with GitHub Actions
+- ✅ >70% test coverage across all routes and models
 
 ---
 
