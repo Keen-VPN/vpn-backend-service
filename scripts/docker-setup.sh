@@ -51,6 +51,7 @@ if [ ! -f .env ]; then
     echo "   - STRIPE_SECRET_KEY"
     echo "   - STRIPE_WEBHOOK_SECRET"
     echo "   - STRIPE_INDIVIDUAL_ANNUAL_PRICE_ID"
+    echo "   - STRIPE_INDIVIDUAL_MONTHLY_PRICE_ID"
     echo "   - JWT_SECRET"
     echo ""
     read -p "Press Enter after updating .env, or Ctrl+C to exit..."

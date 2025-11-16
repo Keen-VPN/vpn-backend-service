@@ -55,6 +55,7 @@ jobs:
           STRIPE_SECRET_KEY=sk_test_mock_key
           STRIPE_WEBHOOK_SECRET=whsec_test_mock_secret
           STRIPE_INDIVIDUAL_ANNUAL_PRICE_ID=price_test_mock_id
+          STRIPE_INDIVIDUAL_MONTHLY_PRICE_ID=your_price_id
           PLAN_PRICE=100.00
           PLAN_NAME=Premium VPN - Annual
           PORT=3001
