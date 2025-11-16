@@ -171,6 +171,44 @@ class AppleIAPPurchaseModel {
     });
     return ledgerEntryFromRecord(record);
   }
+
+  /**
+   * Unlink a purchase (rollback operation)
+   */
+  async unlink(originalTransactionId: string) {
+    const record = await prisma.appleIAPPurchase.update({
+      where: { originalTransactionId },
+      data: {
+        linkedUserId: null,
+        linkedEmail: null,
+        linkedAt: null,
+      },
+    });
+    return ledgerEntryFromRecord(record);
+  }
+
+  /**
+   * Find all unlinked Apple IAP purchases (where linkedUserId is null)
+   * Optionally filter by expiration date to only get active purchases
+   */
+  async findUnlinkedPurchases(onlyActive: boolean = true) {
+    const now = new Date();
+    const records = await prisma.appleIAPPurchase.findMany({
+      where: {
+        linkedUserId: null,
+        ...(onlyActive
+          ? {
+              OR: [
+                { expiresDate: null },
+                { expiresDate: { gt: now } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { purchaseDate: 'desc' },
+    });
+    return records.map(ledgerEntryFromRecord);
+  }
 }
 
 export default AppleIAPPurchaseModel;

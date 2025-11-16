@@ -18,3 +18,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS "push_tokens_token_key"
 CREATE INDEX IF NOT EXISTS "push_tokens_user_id_idx"
   ON "push_tokens" ("user_id");
 
+
