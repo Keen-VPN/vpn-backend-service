@@ -19,8 +19,16 @@ model User {
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   stripeCustomerId   String?             @unique @map("stripe_customer_id")
+  trialActive        Boolean             @default(false) @map("trial_active")
+  trialStartsAt      DateTime?           @map("trial_starts_at")
+  trialEndsAt        DateTime?           @map("trial_ends_at")
+  trialTier          String?             @map("trial_tier")
   connectionSessions ConnectionSession[]
   subscriptions      Subscription[]
+  appleIAPPurchases  AppleIAPPurchase[]
+  trialGrant         TrialGrant?
+  deviceTrialFingerprints DeviceTrialFingerprint[]
+  pushTokens         PushToken[]
 
   @@map("users")
 }
@@ -49,11 +57,10 @@ model Subscription {
   subscriptionType           String    @default("stripe") @map("subscription_type")
   user                       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([stripeSubscriptionId, currentPeriodStart], name: "subscription_period_unique")
+  @@unique([stripeSubscriptionId, currentPeriodStart], map: "subscription_period_unique")
   @@index([userId])
   @@index([subscriptionType])
   @@index([stripeCustomerId])
-  @@index([stripeSubscriptionId])
   @@index([appleTransactionId])
   @@index([appleOriginalTransactionId])
   @@index([status])
@@ -61,48 +68,45 @@ model Subscription {
   @@map("subscriptions")
 }
 
-// ========================================
-// ENUMS
-// ========================================
-enum TerminationReason {
-  USER_TERMINATION @map("user_termination")
-  CONNECTION_LOST  @map("connection_lost")
+model AppleIAPPurchase {
+  id                     String    @id @default(uuid())
+  transactionId          String    @unique @map("transaction_id")
+  originalTransactionId  String    @unique @map("original_transaction_id")
+  productId              String    @map("product_id")
+  environment            String?   @map("environment")
+  purchaseDate           DateTime  @map("purchase_date")
+  expiresDate            DateTime? @map("expires_date")
+  receiptData            String?   @map("receipt_data")
+  linkedUserId           String?   @map("linked_user_id")
+  linkedEmail            String?   @map("linked_email")
+  linkedAt               DateTime? @map("linked_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  linkedUser             User?     @relation(fields: [linkedUserId], references: [id], onDelete: SetNull)
 
-  @@map("termination_reason")
+  @@index([linkedUserId])
+  @@map("apple_iap_purchases")
 }
 
-enum EventType {
-  SESSION_START @map("session_start")
-  HEARTBEAT     @map("heartbeat")
-  SESSION_END   @map("session_end")
-
-  @@map("event_type")
-}
-
-// ========================================
-// CONNECTION SESSION MODEL
-// ========================================
 model ConnectionSession {
-  id                 String            @id @default(uuid())
-  userId             String            @map("user_id")
-  sessionStart       DateTime          @map("session_start")
-  sessionEnd         DateTime?         @map("session_end")
-  durationSeconds    Int               @default(0) @map("duration_seconds")
-  serverLocation     String?           @map("server_location") // 'US', 'Nigeria', etc.
-  serverAddress      String?           @map("server_address") // IP address of VPN server (for troubleshooting only)
-  platform           String // 'macOS', 'iOS', 'Android', 'Web'
-  appVersion         String?           @map("app_version")
-  bytesTransferred   BigInt            @default(0) @map("bytes_transferred")
-  subscriptionTier   String?           @map("subscription_tier") // 'free', 'basic', 'premium'
-  terminationReason  TerminationReason @default(USER_TERMINATION) @map("termination_reason")
-  eventType          EventType         @default(SESSION_START) @map("event_type") // Event-driven session tracking
-  heartbeatTimestamp DateTime?         @map("heartbeat_timestamp") // For heartbeat events
-  isAnonymized       Boolean           @default(false) @map("is_anonymized") // Privacy flag
-  createdAt          DateTime          @default(now()) @map("created_at")
-  updatedAt          DateTime          @updatedAt @map("updated_at")
-
-  // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String            @id @default(uuid())
+  userId            String            @map("user_id")
+  sessionStart      DateTime          @map("session_start")
+  sessionEnd        DateTime?         @map("session_end")
+  durationSeconds   Int               @default(0) @map("duration_seconds")
+  serverLocation    String?           @map("server_location")
+  serverAddress     String?           @map("server_address")
+  platform          String
+  appVersion        String?           @map("app_version")
+  bytesTransferred  BigInt            @default(0) @map("bytes_transferred")
+  isAnonymized      Boolean           @default(false) @map("is_anonymized")
+  subscriptionTier  String?           @map("subscription_tier")
+  terminationReason TerminationReason @default(USER_TERMINATION) @map("termination_reason")
+  eventType         EventType         @default(SESSION_START) @map("event_type")
+  heartbeatTimestamp DateTime?        @map("heartbeat_timestamp")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([sessionStart])
@@ -144,11 +148,11 @@ model SessionAggregate {
 
 model ProcessedSession {
   id                      String   @id @default(uuid())
-  sessionId               String   @unique @map("session_id") // Reference to ConnectionSession.id
+  sessionId               String   @unique @map("session_id")
   userId                  String   @map("user_id")
-  dataConsumed            Decimal  @map("data_consumed") @db.Decimal(15, 2) // In KB
-  averageSessionBandwidth Decimal  @map("average_session_bandwidth") @db.Decimal(15, 2) // In KB/sec
-  sessionDuration         Decimal  @map("session_duration") @db.Decimal(10, 2) // In minutes
+  dataConsumed            Decimal  @map("data_consumed") @db.Decimal(15, 2)
+  averageSessionBandwidth Decimal  @map("average_session_bandwidth") @db.Decimal(15, 2)
+  sessionDuration         Decimal  @map("session_duration") @db.Decimal(10, 2)
   startedAt               DateTime @map("started_at") @db.Timestamptz
   endedAt                 DateTime @map("ended_at") @db.Timestamptz
   terminationReason       String   @map("termination_reason")
@@ -175,4 +179,61 @@ model VpnConfig {
 
   @@index([isActive, createdAt])
   @@map("vpn_configs")
+}
+
+model TrialGrant {
+  id         String   @id @default(uuid())
+  userId     String   @unique @map("user_id")
+  deviceHash String   @map("device_hash")
+  grantedAt  DateTime @default(now()) @map("granted_at")
+  expiresAt  DateTime @map("expires_at")
+  channel    String   @default("auto")
+  metadata   Json?    @db.JsonB
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("trial_grants")
+  @@index([deviceHash], map: "trial_grants_device_hash")
+}
+
+model DeviceTrialFingerprint {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  hash      String   @unique
+  platform  String?
+  createdAt DateTime @default(now()) @map("created_at")
+  lastSeen  DateTime @default(now()) @map("last_seen")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("trial_device_fingerprints")
+  @@index([userId], map: "trial_device_fingerprints_user_id")
+}
+
+model PushToken {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  token       String   @unique
+  deviceHash  String?  @map("device_hash")
+  platform    String?  @map("platform")
+  environment String?  @map("environment")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("push_tokens")
+  @@index([userId], map: "push_tokens_user_id")
+}
+
+enum TerminationReason {
+  USER_TERMINATION @map("user_termination")
+  CONNECTION_LOST  @map("connection_lost")
+
+  @@map("termination_reason")
+}
+
+enum EventType {
+  SESSION_START @map("session_start")
+  HEARTBEAT     @map("heartbeat")
+  SESSION_END   @map("session_end")
+
+  @@map("event_type")
 }
