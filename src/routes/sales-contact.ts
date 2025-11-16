@@ -145,10 +145,11 @@ router.post("/submit", async (req: Request, res: Response): Promise<void> => {
       }
     };
 
+    // TODO: UNCOMMENT WHEN RESEND EMAILING SEVICE IS SETUP
     // Execute email notifications without blocking the response
-    emailPromises().catch((error) => {
-      console.error("❌ Email notification errors:", error);
-    });
+    // emailPromises().catch((error) => {
+    //   console.error("❌ Email notification errors:", error);
+    // });
 
     // 7. Return success response immediately
     console.log("✅ Sales contact submission completed successfully");

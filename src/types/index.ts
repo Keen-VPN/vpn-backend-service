@@ -197,7 +197,7 @@ export interface CreateSalesContactData {
   companyName: string;
   workEmail: string;
   teamSize: number;
-  countryRegion: string;
+  countryRegion?: string;
   hasConsent: boolean;
   phone?: string;
   useCase?: string;
@@ -212,7 +212,7 @@ export interface SalesContactRequest {
   companyName: string;
   workEmail: string;
   teamSize: number;
-  countryRegion: string;
+  countryRegion?: string;
   hasConsent: boolean;
   phone?: string;
   useCase?: string;
