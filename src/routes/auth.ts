@@ -1392,12 +1392,14 @@ router.post("/verify", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Touch device fingerprint if provided (for existing users too)
+    // CRITICAL: Update device fingerprint to current user when they verify session
+    // This ensures device fingerprint is always linked to the currently logged-in user
+    // Prevents User B from seeing User A's trial when logging in on the same device
     if (deviceFingerprint) {
       await trialService.touchDeviceFingerprint(
         user.id,
         deviceFingerprint,
-        devicePlatform
+        devicePlatform || user.provider
       );
     }
 
@@ -1417,6 +1419,7 @@ router.post("/verify", async (req: Request, res: Response): Promise<void> => {
       };
     }
 
+    // Get trial status for THIS user (not device-based)
     await trialService.expireIfNeeded(user.id);
     const trialStatus = await trialService.status(user.id);
 
