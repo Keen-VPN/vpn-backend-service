@@ -40,8 +40,20 @@ jest.mock("node-fetch", () =>
 );
 
 describe("Auth Routes Integration Tests", () => {
+  let dbAvailable = false;
+
   beforeAll(async () => {
-    await setupTestDatabase();
+    try {
+      await setupTestDatabase();
+      dbAvailable = true;
+    } catch (error: any) {
+      if (error.message === "DATABASE_UNAVAILABLE") {
+        console.warn("⚠️  Skipping tests - database not available");
+        dbAvailable = false;
+        return;
+      }
+      throw error;
+    }
   });
 
   afterAll(async () => {
@@ -49,6 +61,9 @@ describe("Auth Routes Integration Tests", () => {
   });
 
   beforeEach(async () => {
+    if (!dbAvailable) {
+      return; // Skip if DB is not available
+    }
     await cleanupTestDatabase();
     // Clear blacklist
     global.deletedAppleUsers = new Map();
