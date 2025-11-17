@@ -54,8 +54,20 @@ jest.mock("../../src/config/stripe.js", () => ({
 }));
 
 describe("Subscription Routes Integration Tests", () => {
+  let dbAvailable = false;
+
   beforeAll(async () => {
-    await setupTestDatabase();
+    try {
+      await setupTestDatabase();
+      dbAvailable = true;
+    } catch (error: any) {
+      if (error.message === "DATABASE_UNAVAILABLE") {
+        console.warn("⚠️  Skipping tests - database not available");
+        dbAvailable = false;
+        return;
+      }
+      throw error;
+    }
   });
 
   afterAll(async () => {
@@ -63,6 +75,9 @@ describe("Subscription Routes Integration Tests", () => {
   });
 
   beforeEach(async () => {
+    if (!dbAvailable) {
+      return; // Skip if DB is not available
+    }
     await cleanupTestDatabase();
     jest.clearAllMocks();
   });

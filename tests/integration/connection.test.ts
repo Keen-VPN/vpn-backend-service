@@ -11,8 +11,20 @@ import {
 } from "../setup/helpers.js";
 
 describe("Connection Routes Integration Tests", () => {
+  let dbAvailable = false;
+
   beforeAll(async () => {
-    await setupTestDatabase();
+    try {
+      await setupTestDatabase();
+      dbAvailable = true;
+    } catch (error: any) {
+      if (error.message === "DATABASE_UNAVAILABLE") {
+        console.warn("⚠️  Skipping tests - database not available");
+        dbAvailable = false;
+        return;
+      }
+      throw error;
+    }
   });
 
   afterAll(async () => {
@@ -20,6 +32,9 @@ describe("Connection Routes Integration Tests", () => {
   });
 
   beforeEach(async () => {
+    if (!dbAvailable) {
+      return; // Skip if DB is not available
+    }
     await cleanupTestDatabase();
   });
 

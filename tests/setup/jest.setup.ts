@@ -7,6 +7,15 @@ process.env.NODE_ENV = "test";
 // Load test environment variables
 dotenv.config({ path: path.resolve(process.cwd(), ".env.test") });
 
+// Override DATABASE_URL to use direct PostgreSQL connection for tests
+// Prisma Accelerate (Data Proxy) doesn't work well in test environments
+if (process.env.DATABASE_URL?.startsWith("prisma+")) {
+  // Extract the actual PostgreSQL URL from the commented line or use a default test DB
+  // For local testing, use a direct PostgreSQL connection
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || 
+    "postgresql://keenvpn:keenvpn_test_password@localhost:5432/keenvpn_test?schema=public";
+}
+
 // Set required environment variables for tests
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret-key";
 process.env.STRIPE_WEBHOOK_SECRET =
