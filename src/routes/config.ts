@@ -1,15 +1,8 @@
 import express, { Request, Response, Router } from "express";
 import { Prisma } from "@prisma/client";
 import VPNConfigModel from "../models/VPNConfig.js";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import path from "path";
-// Use a relative path approach that works in both production and test environments
-const defaultConfigJson = JSON.parse(
-  readFileSync(
-    path.resolve(process.cwd(), "src/config/default-vpn-config.json"),
-    "utf-8"
-  )
-);
 import { generateWeakEtag } from "../utils/etag.js";
 import type {
   RemoteVPNConfig,
@@ -21,7 +14,90 @@ import type {
 const router: Router = express.Router();
 const vpnConfigModel = new VPNConfigModel();
 
-const fallbackConfig = defaultConfigJson as RemoteVPNConfig;
+// Hardcoded fallback config (used when file is not available, e.g., in Netlify Functions)
+const hardcodedFallbackConfig: RemoteVPNConfig = {
+  version: "fallback-1.0.0",
+  updatedAt: null,
+  servers: [
+    {
+      id: "us-east",
+      name: "United States",
+      country: "United States",
+      city: "Virginia",
+      serverAddress: "3.225.112.116",
+      remoteIdentifier: null,
+      credentialId: "client",
+      assetKey: "us",
+      flagUrl: "https://flagcdn.com/w40/us.png",
+      coordinates: {
+        lat: 37.5407,
+        lng: -77.436,
+      },
+      isDefault: true,
+      sortOrder: 10,
+      metadata: null,
+    },
+    {
+      id: "ng-lagos",
+      name: "Nigeria",
+      country: "Nigeria",
+      city: "Lagos",
+      serverAddress: "169.255.57.34",
+      remoteIdentifier: null,
+      credentialId: "client",
+      assetKey: "ng",
+      flagUrl: "https://flagcdn.com/w40/ng.png",
+      coordinates: {
+        lat: 6.5244,
+        lng: 3.3792,
+      },
+      isDefault: false,
+      sortOrder: 20,
+      metadata: null,
+    },
+  ],
+  credentials: [
+    {
+      id: "client",
+      username: "client",
+      password: "KeenVPNClient2024Secure",
+      sharedSecret: null,
+      certificate: null,
+      certificatePassword: null,
+      metadata: null,
+    },
+  ],
+  featureFlags: null,
+  rollout: null,
+  metadata: null,
+};
+
+// Lazy load default config with fallback
+function getDefaultConfig(): RemoteVPNConfig {
+  try {
+    // Try multiple possible paths for the config file
+    const possiblePaths = [
+      path.resolve(process.cwd(), "src/config/default-vpn-config.json"),
+      path.resolve(process.cwd(), "dist/config/default-vpn-config.json"),
+    ];
+
+    for (const configPath of possiblePaths) {
+      if (existsSync(configPath)) {
+        const fileContent = readFileSync(configPath, "utf-8");
+        return JSON.parse(fileContent) as RemoteVPNConfig;
+      }
+    }
+
+    // If file not found, use hardcoded fallback
+    console.warn("⚠️ default-vpn-config.json not found, using hardcoded fallback");
+    return hardcodedFallbackConfig;
+  } catch (error) {
+    console.error("❌ Failed to load default VPN config, using hardcoded fallback:", error);
+    return hardcodedFallbackConfig;
+  }
+}
+
+const fallbackConfig = getDefaultConfig();
 const fallbackEtag = generateWeakEtag(fallbackConfig);
 
 function getClientTokenFromRequest(req: Request): string | null {
