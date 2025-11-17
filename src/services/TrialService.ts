@@ -35,7 +35,15 @@ export default class TrialService {
   private notificationService = new NotificationService();
 
   async grantIfEligible(user: PrismaUser, deviceHash: string | null): Promise<GrantResult> {
+    console.log('🔍 TrialService.grantIfEligible called:', {
+      userId: user.id,
+      email: user.email,
+      deviceHash: deviceHash || 'null',
+      FF_TRIALS_ENABLED: process.env.FF_TRIALS_ENABLED
+    });
+
     if (!process.env.FF_TRIALS_ENABLED || process.env.FF_TRIALS_ENABLED !== 'true') {
+      console.log('❌ Trial feature flag is disabled');
       return { granted: false, reason: 'feature_disabled', userId: user.id };
     }
 
@@ -48,15 +56,33 @@ export default class TrialService {
       });
 
       if (existingGrant) {
+        console.log('❌ Trial blocked: User already has a trial grant');
         await this.emitTelemetry('trial.blocked', { userId: user.id, reason: 'existing_grant' });
         return { granted: false, reason: 'existing_grant', userId: user.id };
       }
 
-      const hasActiveSubscription = await this.subscriptionModel.hasActiveSubscription(user.id);
-      if (hasActiveSubscription) {
-        await this.emitTelemetry('trial.blocked', { userId: user.id, reason: 'already_paid' });
-        return { granted: false, reason: 'already_paid', userId: user.id };
+      // Free trial is one-time only per user (regardless of IAP or Stripe subscription)
+      // REQUIRED: User must have a subscription (trialing or active) to get a trial
+      // Trials are only granted when users subscribe, not on sign-up
+      // Note: Subscription can be "trialing" (introductory offer) or "active" (billing)
+      const activeSubscription = await this.subscriptionModel.findActiveByUserId(user.id);
+      const hasSubscription = activeSubscription !== null;
+      const subscriptionStatus = activeSubscription?.status;
+      
+      console.log('🔍 Checking for subscription:', { 
+        hasSubscription, 
+        subscriptionStatus,
+        subscriptionId: activeSubscription?.id 
+      });
+      
+      if (!hasSubscription) {
+        console.log('❌ Trial blocked: User does not have a subscription (trials only granted when subscribing)');
+        await this.emitTelemetry('trial.blocked', { userId: user.id, reason: 'no_subscription' });
+        return { granted: false, reason: 'no_subscription', userId: user.id };
       }
+      
+      // Note: The existingGrant check at the top already ensures one-time trial per user
+      // Once a user has received a trial grant, they cannot get another one, even if they subscribe via a different method
 
       if (deviceHash) {
         const existingFingerprint = await tx.deviceTrialFingerprint.findUnique({

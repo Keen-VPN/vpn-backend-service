@@ -205,6 +205,12 @@ export interface AppleSignInData {
   userIdentifier: string;
   email: string;
   fullName?: string;
+  // Optional: Transaction IDs from StoreKit to link IAP purchases during login
+  transactionIds?: Array<{
+    transactionId: string;
+    originalTransactionId: string;
+    productId: string;
+  }>;
 }
 
 export interface SessionTokenPayload {
