@@ -794,6 +794,16 @@ router.post("/verify", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Extract device fingerprint if provided (optional for backward compatibility)
+    const deviceFingerprint =
+      typeof (req.body as any).deviceFingerprint === "string"
+        ? ((req.body as any).deviceFingerprint as string).trim()
+        : null;
+    const devicePlatform =
+      typeof (req.body as any).devicePlatform === "string"
+        ? ((req.body as any).devicePlatform as string).trim()
+        : undefined;
+
     // Verify session token
     const { verifyPermanentSessionToken } = await import("../utils/auth.js");
     const payload = verifyPermanentSessionToken(sessionToken);
@@ -886,6 +896,17 @@ router.post("/verify", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // CRITICAL: Update device fingerprint to current user when they verify session
+    // This ensures device fingerprint is always linked to the currently logged-in user
+    // Prevents User B from seeing User A's trial when logging in on the same device
+    if (deviceFingerprint) {
+      await trialService.touchDeviceFingerprint(
+        user.id,
+        deviceFingerprint,
+        devicePlatform || user.provider
+      );
+    }
+
     // Get user's subscription data
     const { default: Subscription } = await import("../models/Subscription.js");
     const subscriptionModel = new Subscription();
@@ -902,6 +923,8 @@ router.post("/verify", async (req: Request, res: Response): Promise<void> => {
       };
     }
 
+    // Get trial status for THIS user (not device-based)
+    await trialService.expireIfNeeded(user.id);
     const trialStatus = await trialService.status(user.id);
 
     res.status(200).json({
