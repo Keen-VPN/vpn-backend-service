@@ -1,0 +1,85 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: keenvpn-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-keenvpn}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-keenvpn_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-keenvpn}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - keenvpn-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-keenvpn}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # KeenVPN Backend API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: keenvpn-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3003}:3003"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-keenvpn}:${POSTGRES_PASSWORD:-keenvpn_dev_password}@postgres:5432/${POSTGRES_DB:-keenvpn}?schema=public
+
+      # Firebase Configuration (from .env)
+      PORT: ${PORT:-3003}
+      NODE_ENV: ${NODE_ENV}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL}
+
+      # Stripe Configuration
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_INDIVIDUAL_ANNUAL_PRICE_ID: ${STRIPE_INDIVIDUAL_ANNUAL_PRICE_ID}
+      STRIPE_INDIVIDUAL_MONTHLY_PRICE_ID: ${STRIPE_INDIVIDUAL_MONTHLY_PRICE_ID}
+
+      # JWT Configuration
+      JWT_SECRET: ${JWT_SECRET}
+
+      # Plan Configuration
+      PLAN_PRICE: ${PLAN_PRICE:-100}
+      PLAN_NAME: ${PLAN_NAME:-Premium VPN Service}
+      PLAN_FEATURES: ${PLAN_FEATURES:-Unlimited bandwidth, Premium support, Secure & private browsing}
+
+      # Tunnel Configuration (disabled in Docker)
+      TUNNELTO_ENABLED: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - keenvpn-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:3003/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
+        ]
+      interval: 30s
+      timeout: 3s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  postgres_data:
+    name: keenvpn_postgres_data
+
+networks:
+  keenvpn-network:
+    name: keenvpn_network
+    driver: bridge

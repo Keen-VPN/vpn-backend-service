@@ -3,12 +3,20 @@ import stripe from "../config/stripe.js";
 import User from "../models/User.js";
 import Subscription from "../models/Subscription.js";
 import { verifyPermanentSessionToken } from "../utils/auth.js";
-import type { ApiResponse } from "../types/index.js";
+import {
+  getSubscriptionPlans,
+  getPlanById,
+  getPriceIdForPlan,
+  getPlanName,
+  getBillingPeriod,
+} from "../config/plans.js";
+import type { ApiResponse, SubscriptionPlan } from "../types/index.js";
+import { serializeTrialStatus } from "../utils/trial.js";
+import TrialService from "../services/TrialService.js";
 
 const router: Router = express.Router();
+const trialService = new TrialService();
 
-const PRICE_ID =
-  process.env.STRIPE_PRICE_ID || "price_1Rf5jFJ63Mu2b1BhLuEaYEB7";
 const SUCCESS_URL =
   process.env.CHECKOUT_SUCCESS_URL || "https://vpnkeen.com/success";
 const CANCEL_URL =
@@ -17,32 +25,9 @@ const CANCEL_URL =
 // Get available subscription plans
 router.get("/plans", async (_req: Request, res: Response): Promise<void> => {
   try {
-    // Updated to reflect single yearly plan at $100
-    const planPrice = parseFloat(process.env.PLAN_PRICE || "100.00");
-    const planName = process.env.PLAN_NAME || "Premium VPN - Annual";
-    const planFeatures = process.env.PLAN_FEATURES
-      ? process.env.PLAN_FEATURES.split(",")
-      : [
-          "Unlimited bandwidth",
-          "Global servers",
-          "Premium support",
-          "No logs policy",
-        ];
-    const stripeCheckoutLink = process.env.STRIPE_CHECKOUT_LINK || "";
+    const plans = getSubscriptionPlans();
 
-    const plans = [
-      {
-        id: "premium_yearly",
-        name: planName,
-        price: planPrice,
-        period: "year",
-        interval: "year",
-        features: planFeatures,
-        checkoutLink: stripeCheckoutLink,
-      },
-    ];
-
-    const response: ApiResponse = {
+    const response: ApiResponse<{ plans: SubscriptionPlan[] }> = {
       success: true,
       data: { plans },
     };
@@ -53,6 +38,46 @@ router.get("/plans", async (_req: Request, res: Response): Promise<void> => {
     res.status(500).json({
       success: false,
       error: "Failed to get subscription plans",
+    } as ApiResponse);
+  }
+});
+
+// Get specific plan by ID
+router.get("/plan/:id", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      res.status(400).json({
+        success: false,
+        error: "Plan ID is required",
+      } as ApiResponse);
+      return;
+    }
+
+    console.log(`🔍 Getting plan details for: ${id}`);
+
+    const plan = getPlanById(id);
+
+    if (!plan) {
+      res.status(404).json({
+        success: false,
+        error: "Plan not found",
+      } as ApiResponse);
+      return;
+    }
+
+    const response: ApiResponse<{ plan: SubscriptionPlan }> = {
+      success: true,
+      data: { plan },
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error("Error getting plan by ID:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to get plan details",
     } as ApiResponse);
   }
 });
@@ -94,8 +119,10 @@ router.post(
       // In development, if user not found by ID, try alternative lookups
       // This handles cases where token was generated on a different environment
       if (!user && process.env.NODE_ENV === "development") {
-        console.log(`🔧 Development mode: User ${userInfo.userId} not found by ID for subscription check, trying alternative lookups...`);
-        
+        console.log(
+          `🔧 Development mode: User ${userInfo.userId} not found by ID for subscription check, trying alternative lookups...`
+        );
+
         // Try finding by email first
         user = await userModel.findByEmail(userInfo.email);
         if (user) {
@@ -104,7 +131,9 @@ router.post(
           // Try finding by firebaseUid (token's userId stored as firebaseUid)
           user = await userModel.findByFirebaseUid(userInfo.userId);
           if (user) {
-            console.log(`✅ Found user by firebaseUid for subscription: ${user.id}`);
+            console.log(
+              `✅ Found user by firebaseUid for subscription: ${user.id}`
+            );
           }
         }
       }
@@ -118,13 +147,18 @@ router.post(
       }
 
       // Get active subscription from new subscriptions table
+      // This will automatically transition "trialing" to "active" after 30 days
       const activeSubscription = await subscriptionModel.findActiveByUserId(
         user.id
       );
 
-      // Check if subscription is active
+      // Check if subscription is active (includes both "active" and "trialing" status)
       const hasActiveSubscription =
-        activeSubscription !== null && activeSubscription.status === "active";
+        activeSubscription !== null && 
+        (activeSubscription.status === "active" || activeSubscription.status === "trialing");
+
+      await trialService.expireIfNeeded(user.id);
+      const trialStatus = await trialService.status(user.id);
 
       res.json({
         success: true,
@@ -137,6 +171,7 @@ router.post(
           subscriptionType: activeSubscription?.subscriptionType || "stripe",
         },
         hasActiveSubscription,
+        trial: serializeTrialStatus(trialStatus),
       } as ApiResponse);
     } catch (error) {
       console.error("Error getting subscription status with session:", error);
@@ -251,12 +286,20 @@ router.post(
   "/create-checkout-session",
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const { sessionToken } = req.body;
+      const { sessionToken, planId } = req.body;
 
       if (!sessionToken) {
         res.status(400).json({
           success: false,
           error: "Session token is required",
+        } as ApiResponse);
+        return;
+      }
+
+      if (!planId) {
+        res.status(400).json({
+          success: false,
+          error: "Plan ID is required",
         } as ApiResponse);
         return;
       }
@@ -293,9 +336,19 @@ router.post(
         return;
       }
 
-      // Get plan info
-      const planName = process.env.PLAN_NAME || "Premium VPN - Annual";
-      const stripePriceId = process.env.STRIPE_PRICE_ID;
+      // Validate planId and get plan details
+      if (planId !== "premium_monthly" && planId !== "premium_yearly") {
+        res.status(400).json({
+          success: false,
+          error:
+            "Invalid plan ID. Must be 'premium_monthly' or 'premium_yearly'",
+        } as ApiResponse);
+        return;
+      }
+
+      const stripePriceId = getPriceIdForPlan(planId);
+      const planName = getPlanName(planId);
+      const billingPeriod = getBillingPeriod(planId);
 
       if (!stripePriceId) {
         res.status(500).json({
@@ -303,6 +356,18 @@ router.post(
           error: "Stripe price ID not configured",
         } as ApiResponse);
         return;
+      }
+
+      await trialService.expireIfNeeded(user.id);
+      const trialStatus = await trialService.status(user.id);
+      const trialEndsAt =
+        trialStatus.trialActive && trialStatus.trialEndsAt
+          ? trialStatus.trialEndsAt
+          : null;
+
+      const subscriptionData: Record<string, unknown> = {};
+      if (trialEndsAt && trialEndsAt > new Date()) {
+        subscriptionData.trial_end = Math.floor(trialEndsAt.getTime() / 1000);
       }
 
       // Create Stripe Checkout Session
@@ -321,7 +386,13 @@ router.post(
         metadata: {
           userId: user.id,
           plan: planName,
+          planId: planId,
+          billingPeriod: billingPeriod,
+          trialEndsAt: trialEndsAt?.toISOString() ?? "",
         },
+        subscription_data: Object.keys(subscriptionData).length
+          ? subscriptionData
+          : undefined,
       });
 
       res.json({
@@ -343,12 +414,20 @@ router.post(
   "/create-checkout",
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const { idToken, email } = req.body;
+      const { idToken, email, planId } = req.body;
 
       if (!idToken || !email) {
         res.status(400).json({
           success: false,
           error: "Missing required fields: idToken, email",
+        } as ApiResponse);
+        return;
+      }
+
+      if (!planId) {
+        res.status(400).json({
+          success: false,
+          error: "Plan ID is required",
         } as ApiResponse);
         return;
       }
@@ -383,6 +462,26 @@ router.post(
         return;
       }
 
+      await trialService.expireIfNeeded(user.id);
+      const trialStatus = await trialService.status(user.id);
+      const trialEndsAt =
+        trialStatus.trialActive && trialStatus.trialEndsAt
+          ? trialStatus.trialEndsAt
+          : null;
+
+      const subscriptionData: Record<string, unknown> = {
+        metadata: {
+          userId: user.id,
+          email: user.email,
+        },
+      };
+
+      if (trialEndsAt && trialEndsAt > new Date()) {
+        (subscriptionData as any).trial_end = Math.floor(
+          trialEndsAt.getTime() / 1000
+        );
+      }
+
       // Create or retrieve Stripe customer
       let stripeCustomerId = user.stripeCustomerId;
 
@@ -401,6 +500,28 @@ router.post(
         console.log("✅ Created Stripe customer:", stripeCustomerId);
       }
 
+      // Validate planId and get plan details
+      if (planId !== "premium_monthly" && planId !== "premium_yearly") {
+        res.status(400).json({
+          success: false,
+          error:
+            "Invalid plan ID. Must be 'premium_monthly' or 'premium_yearly'",
+        } as ApiResponse);
+        return;
+      }
+
+      const stripePriceId = getPriceIdForPlan(planId);
+      const planName = getPlanName(planId);
+      const billingPeriod = getBillingPeriod(planId);
+
+      if (!stripePriceId) {
+        res.status(500).json({
+          success: false,
+          error: "Stripe price ID not configured",
+        } as ApiResponse);
+        return;
+      }
+
       // Create checkout session
       const session = await stripe.checkout.sessions.create({
         customer: stripeCustomerId,
@@ -408,22 +529,31 @@ router.post(
         payment_method_types: ["card"],
         line_items: [
           {
-            price: PRICE_ID,
+            price: stripePriceId,
             quantity: 1,
           },
         ],
-        success_url: `${SUCCESS_URL}?session_id={CHECKOUT_SESSION_ID}`,
+        success_url: SUCCESS_URL,
         cancel_url: CANCEL_URL,
         metadata: {
           userId: user.id,
           email: user.email,
+          plan: planName,
+          planId: planId,
+          billingPeriod: billingPeriod,
+          trialEndsAt: trialEndsAt?.toISOString() ?? "",
         },
         subscription_data: {
           metadata: {
             userId: user.id,
             email: user.email,
+            plan: planName,
+            planId: planId,
+            billingPeriod: billingPeriod,
           },
+          trial_period_days: 30, // 1 month free trial
         },
+
       });
 
       console.log("✅ Checkout session created:", session.id);
