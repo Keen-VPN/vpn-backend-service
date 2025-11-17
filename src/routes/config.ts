@@ -3,7 +3,11 @@ import { Prisma } from "@prisma/client";
 import VPNConfigModel from "../models/VPNConfig.js";
 import { readFileSync, existsSync } from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { generateWeakEtag } from "../utils/etag.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import type {
   RemoteVPNConfig,
   SaveVPNConfigRequest,
