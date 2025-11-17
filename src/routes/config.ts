@@ -3,11 +3,7 @@ import { Prisma } from "@prisma/client";
 import VPNConfigModel from "../models/VPNConfig.js";
 import { readFileSync, existsSync } from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
 import { generateWeakEtag } from "../utils/etag.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 import type {
   RemoteVPNConfig,
   SaveVPNConfigRequest,
@@ -83,8 +79,6 @@ function getDefaultConfig(): RemoteVPNConfig {
     const possiblePaths = [
       path.resolve(process.cwd(), "src/config/default-vpn-config.json"),
       path.resolve(process.cwd(), "dist/config/default-vpn-config.json"),
-      path.resolve(__dirname, "../config/default-vpn-config.json"),
-      path.resolve(__dirname, "../../src/config/default-vpn-config.json"),
     ];
 
     for (const configPath of possiblePaths) {
