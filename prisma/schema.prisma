@@ -152,7 +152,7 @@ model SalesContact {
   companyName              String   @map("company_name")
   workEmail                String   @map("work_email")
   teamSize                 Int      @map("team_size")
-  countryRegion            String   @map("country_region")
+  countryRegion            String?  @map("country_region")
   hasConsent               Boolean  @map("has_consent")
   phone                    String?  @map("phone")
   useCase                  String?  @map("use_case")

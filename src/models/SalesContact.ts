@@ -64,7 +64,7 @@ class SalesContact {
           companyName: salesContactData.companyName.trim(),
           workEmail: salesContactData.workEmail.trim().toLowerCase(),
           teamSize: salesContactData.teamSize,
-          countryRegion: salesContactData.countryRegion.trim(),
+          countryRegion: salesContactData.countryRegion?.trim() || null,
           hasConsent: salesContactData.hasConsent,
           phone: salesContactData.phone?.trim() || null,
           useCase: salesContactData.useCase?.trim() || null,
