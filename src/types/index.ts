@@ -21,6 +21,10 @@ export interface UpdateUserData {
   provider?: string;
   emailVerified?: boolean;
   stripeCustomerId?: string;
+  trialActive?: boolean;
+  trialStartsAt?: Date | null;
+  trialEndsAt?: Date | null;
+  trialTier?: string | null;
 }
 
 // Subscription related types
@@ -42,6 +46,14 @@ export interface CreateSubscriptionData {
   currentPeriodStart?: Date;
   currentPeriodEnd?: Date;
   cancelAtPeriodEnd?: boolean;
+}
+
+export interface TrialStatus {
+  trialActive: boolean;
+  trialEndsAt: string | null;
+  daysRemaining: number;
+  isPaid: boolean;
+  tier: string | null;
 }
 
 export interface UpdateSubscriptionData {
@@ -127,6 +139,27 @@ export interface ConnectionStats {
   } | null;
 }
 
+// Subscription Plan types
+export interface SubscriptionPlan {
+  id: "premium_monthly" | "premium_yearly";
+  name: string;
+  description?: string;
+  price: number;
+  period: "month" | "year";
+  interval: "month" | "year";
+  billingPeriod: "month" | "year";
+  features: { name: string; included: boolean; highlighted?: boolean }[];
+  priceId: string;
+  checkoutLink?: string;
+}
+
+export interface CreateCheckoutSessionRequest {
+  sessionToken?: string;
+  idToken?: string;
+  email?: string;
+  planId: "premium_monthly" | "premium_yearly";
+}
+
 // API Response types
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -140,6 +173,22 @@ export interface DeleteAccountResult {
   deletedUserId: string;
   deletedEmail: string;
   stripeCustomerIds: string[];
+}
+
+export interface SubscriptionStatusSummary {
+  status: string;
+  plan?: string;
+  endDate?: string | Date | null;
+  customerId?: string;
+  cancelAtPeriodEnd?: boolean;
+  subscriptionType?: string;
+}
+
+export interface SubscriptionStatusResponse {
+  success: boolean;
+  subscription: SubscriptionStatusSummary;
+  hasActiveSubscription: boolean;
+  trial: TrialStatus;
 }
 
 // Authentication types
@@ -156,6 +205,12 @@ export interface AppleSignInData {
   userIdentifier: string;
   email: string;
   fullName?: string;
+  // Optional: Transaction IDs from StoreKit to link IAP purchases during login
+  transactionIds?: Array<{
+    transactionId: string;
+    originalTransactionId: string;
+    productId: string;
+  }>;
 }
 
 export interface SessionTokenPayload {
@@ -175,12 +230,61 @@ export interface AppleIAPReceipt {
   quantity?: number;
 }
 
+export interface CaptureAppleIAPRequest {
+  transactionId: string;
+  originalTransactionId: string;
+  productId: string;
+  purchaseDateMs: string;
+  expiresDateMs?: string;
+  receiptData?: string | null;
+  environment?: "Sandbox" | "Production" | null;
+}
+
+export interface AppleIAPPurchaseLedgerEntry {
+  transactionId: string;
+  originalTransactionId: string;
+  productId: string;
+  environment?: "Sandbox" | "Production" | null;
+  purchaseDate: string;
+  expiresDate?: string | null;
+  linkedUserId?: string | null;
+  linkedEmail?: string | null;
+  linkedAt?: string | null;
+}
+
+export interface CaptureAppleIAPResponse {
+  success: boolean;
+  purchase: AppleIAPPurchaseLedgerEntry;
+}
+
 export interface LinkAppleIAPRequest {
   sessionToken: string;
   receiptData: string; // Base64 encoded receipt
   transactionId: string;
   originalTransactionId: string;
   productId: string;
+}
+
+export interface LinkAppleIAPResponseBody {
+  success: boolean;
+  message?: string;
+  subscription?: {
+    id: string;
+    status: string;
+    planName?: string | null;
+    endDate?: string | null;
+    subscriptionType: "apple_iap";
+  } | null;
+  error?: string;
+  errorCode?:
+    | "iap_already_linked"
+    | "iap_not_found"
+    | "iap_link_conflict"
+    | "iap_already_active"
+    | "iap_missing_fields"
+    | "unauthorized"
+    | "server_error";
+  linkedEmail?: string | null;
 }
 
 // Stripe webhook event types
@@ -250,4 +354,85 @@ export interface ValidationError {
 export interface ValidationResult {
   isValid: boolean;
   errors: ValidationError[];
+}
+
+// Remote VPN configuration types
+export interface RemoteVPNServerCoordinates {
+  lat: number;
+  lng: number;
+}
+
+export interface RemoteVPNCredential {
+  id: string;
+  username: string;
+  password: string;
+  sharedSecret?: string | null;
+  certificate?: string | null;
+  certificatePassword?: string | null;
+  metadata?: Record<string, string> | null;
+}
+
+export interface RemoteVPNServer {
+  id: string;
+  name: string;
+  country: string;
+  city: string;
+  serverAddress: string;
+  remoteIdentifier?: string | null;
+  credentialId: string;
+  assetKey?: string | null;
+  flagUrl?: string | null;
+  coordinates?: RemoteVPNServerCoordinates | null;
+  isDefault?: boolean | null;
+  sortOrder?: number | null;
+  metadata?: Record<string, string> | null;
+}
+
+export interface RemoteVPNRollout {
+  minAppVersion?: string | null;
+  maxAppVersion?: string | null;
+  allowDuringReview?: boolean | null;
+  stagedPercentage?: number | null;
+  channels?: string[] | null;
+  metadata?: Record<string, string> | null;
+}
+
+export interface RemoteVPNConfig {
+  version: string;
+  updatedAt?: string | null;
+  servers: RemoteVPNServer[];
+  credentials: RemoteVPNCredential[];
+  featureFlags?: Record<string, boolean> | null;
+  rollout?: RemoteVPNRollout | null;
+  metadata?: Record<string, string> | null;
+}
+
+export interface VPNConfigRecord {
+  id: string;
+  version: string;
+  payload: RemoteVPNConfig;
+  etag: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SaveVPNConfigRequest {
+  config: RemoteVPNConfig;
+  activate?: boolean;
+  etag?: string;
+}
+
+export interface UpdateVPNConfigRequest {
+  config?: RemoteVPNConfig;
+  activate?: boolean;
+  etag?: string;
+}
+
+export interface VPNConfigResponseBody {
+  config: RemoteVPNConfig;
+  version: string;
+  etag: string;
+  source: "database" | "fallback";
+  updatedAt: string | null;
 }

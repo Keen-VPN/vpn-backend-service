@@ -1,5 +1,10 @@
 -- CreateEnum
-CREATE TYPE "event_type" AS ENUM ('session_start', 'heartbeat', 'session_end');
+DO $$
+BEGIN
+  CREATE TYPE "event_type" AS ENUM ('session_start', 'heartbeat', 'session_end');
+EXCEPTION WHEN duplicate_object THEN
+  NULL;
+END $$;
 
 -- AlterTable
 ALTER TABLE "connection_sessions" ADD COLUMN     "event_type" "event_type" NOT NULL DEFAULT 'session_start';

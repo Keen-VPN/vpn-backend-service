@@ -150,7 +150,8 @@ FIREBASE_CLIENT_EMAIL=your-email@project.iam.gserviceaccount.com
 # Stripe
 STRIPE_SECRET_KEY=sk_test_your_key
 STRIPE_WEBHOOK_SECRET=whsec_your_secret
-STRIPE_PRICE_ID=price_your_price_id
+STRIPE_INDIVIDUAL_ANNUAL_PRICE_ID=your_price_id
+STRIPE_INDIVIDUAL_MONTHLY_PRICE_ID=your_price_id
 
 # JWT
 JWT_SECRET=your_jwt_secret_min_32_characters_long
@@ -435,6 +436,15 @@ npm run prisma:push      # Push schema to database
 npm run type-check       # Check TypeScript types
 ```
 
+### Testing Commands
+
+```bash
+npm test                 # Run all integration tests
+npm run test:integration # Run integration tests only
+npm run test:watch       # Run tests in watch mode
+npm run test:coverage    # Generate coverage report
+```
+
 ### Docker Commands
 
 ```bash
@@ -622,6 +632,14 @@ When tunnel is active, you'll see:
 - `GET /connection/sessions/:id` - Get user sessions
 - `GET /connection/stats/:id` - Get statistics
 
+### Remote Configuration
+
+- `GET /config/vpn` - Fetch the active VPN configuration (supports `If-None-Match` for ETag caching)
+- `GET /config/vpn?preview=true` - Preview the most recent config (requires `CONFIG_ADMIN_TOKEN`)
+- `POST /config/vpn` - Upsert & optionally activate a new config (requires `CONFIG_ADMIN_TOKEN` & `CONFIG_CLIENT_TOKEN`)
+- `PUT /config/vpn/:id` - Update an existing configuration's payload, etag, or activation state (requires `CONFIG_ADMIN_TOKEN`; activation changes also require `CONFIG_CLIENT_TOKEN`)
+- `DELETE /config/vpn/:id` - Delete a configuration record (requires `CONFIG_ADMIN_TOKEN`)
+
 ---
 
 ## 📖 Documentation
@@ -642,9 +660,12 @@ Required in `.env`:
 DATABASE_URL="postgresql://..."
 JWT_SECRET="your-secret"
 STRIPE_SECRET_KEY="sk_..."
-STRIPE_PRICE_ID="price_..."
+STRIPE_INDIVIDUAL_ANNUAL_PRICE_ID="price_..."
+STRIPE_INDIVIDUAL_MONTHLY_PRICE_ID="price_..."
 PLAN_PRICE="100.00"
 PLAN_NAME="Premium VPN - Annual"
+CONFIG_ADMIN_TOKEN="super-secret-admin-token"
+CONFIG_CLIENT_TOKEN="super-secret-client-token"
 ```
 
 See `env.example` for complete list.
@@ -652,6 +673,167 @@ See `env.example` for complete list.
 ---
 
 ## 🎯 Tech Stack
+
+- **TypeScript 5.3** - Full type safety
+- **Prisma 6.17** - Modern ORM
+- **Express 4.18** - Web framework
+- **PostgreSQL** - Database (Neon/Supabase/Docker)
+- **Docker & Docker Compose** - Containerized development environment
+- **Stripe** - Payment processing
+- **JWT** - Authentication
+- **Tunnelto.dev** - Secure local development tunneling
+- **Jest & Supertest** - Integration testing framework
+- **GitHub Actions** - CI/CD automation
+
+---
+
+## 🧪 Testing
+
+KeenVPN Backend includes comprehensive integration testing with automated CI/CD via GitHub Actions.
+
+### Running Tests Locally
+
+1. **Setup test environment**:
+
+   ```bash
+   # Copy test environment template
+   cp .env.test.example .env.test
+
+   # Edit .env.test with test database credentials
+   # Never use production credentials!
+   ```
+
+2. **Setup test database**:
+
+   ```bash
+   # Using Docker (recommended)
+   docker-compose up -d postgres
+
+   # Or create local database
+   createdb keenvpn_test
+
+   # Run migrations
+   npx prisma migrate deploy
+   ```
+
+3. **Run tests**:
+
+   ```bash
+   # Run all integration tests
+   npm test
+
+   # Run with coverage report
+   npm run test:coverage
+
+   # Run in watch mode
+   npm run test:watch
+   ```
+
+### Test Coverage
+
+- **Auth Routes**: Apple/Google sign-in, session verification, account deletion
+- **Subscription Routes**: Plans, status, cancellation, Stripe webhooks
+- **Connection Routes**: Session tracking, statistics, heartbeats
+- **Desktop Auth**: PKCE flow, code generation/exchange
+- **Apple IAP**: Receipt verification, subscription management
+
+### CI/CD Integration
+
+Tests run automatically on:
+
+- Push to `main` or `develop` branches
+- Pull requests to `main` or `develop`
+
+The GitHub Actions workflow:
+
+1. Sets up PostgreSQL test database
+2. Runs all integration tests
+3. Generates coverage reports
+4. Comments results on PRs
+
+### Documentation
+
+See [TESTING.md](TESTING.md) for detailed testing guide including:
+
+- Writing new tests
+- Mocking strategies
+- Database management
+- Troubleshooting
+- Best practices
+
+---
+
+## 📊 Database Schema
+
+- **users** - User accounts (Google, Apple, Firebase auth)
+- **subscriptions** - Subscription management
+- **connection_sessions** - VPN usage tracking
+- **vpn_configs** - Remote configuration history & rollout control
+
+---
+
+## 🚀 Production Ready
+
+- ✅ Full TypeScript type safety
+- ✅ Prisma ORM for clean queries
+- ✅ Apple Sign In support
+- ✅ Subscription management
+- ✅ Connection tracking with bandwidth
+- ✅ Rate limiting & security
+- ✅ Comprehensive error handling
+- ✅ Docker containerization for consistent environments
+- ✅ Integrated tunnelto.dev for development
+- ✅ Standardized team development workflow
+- ✅ Comprehensive integration testing with Jest
+- ✅ Automated CI/CD pipeline with GitHub Actions
+- ✅ >70% test coverage across all routes and models
+
+---
+
+## 📞 Support
+
+Check documentation files for detailed guides or visit:
+
+- Prisma Docs: https://www.prisma.io/docs
+- TypeScript Docs: https://www.typescriptlang.org/docs
+
+---
+
+**Built for KeenVPN** 🚀
+
+## ✨ Features
+
+- 🔐 Secure authentication (Google, Apple, Firebase)
+- 💳 Subscription management (Stripe + Apple IAP)
+- 🧠 Intelligent VPN server selection
+- 📊 Real-time analytics and monitoring
+- 🆓 Automatic 30-day free trials on first sign-up
+
+---
+
+## 🆓 Free Trial Overview
+
+- New users receive a one-time 30-day trial automatically after a successful Apple or Google sign-up.
+- Trials are gated by `FF_TRIALS_ENABLED` and require both unique email and device fingerprint (`platform + deviceId`) to prevent abuse.
+- Trial status lives on the user record (`trialActive`, `trialStartsAt`, `trialEndsAt`) with an immutable audit row in `trial_grants` and a device fingerprint table.
+- `/api/me/subscription` now returns a merged view of paid + trial status; the clients should rely on this endpoint to drive UI badges, countdowns, and post-expiry CTA states.
+- Paid-critical endpoints (e.g. `/api/connection/*`, `/api/desktop-auth/*`) use `requirePaidOrTrial` middleware so access continues during a trial and is revoked immediately when the trial lapses.
+- Trial lifecycle telemetry: `trial.granted`, `trial.reminder.sent`, `trial.expired`, `trial.blocked` (device/email re-use) and log stubs for push/in-app notifications.
+- Reminder + expiry jobs are scheduled in-process (T-3 days and T+0). Integrate your push service in `NotificationService` when ready for production delivery channels.
+
+### Local Testing Tips
+
+```bash
+# Run unit tests for UTC trial date helpers
+npm test
+
+# Inspect trial status quickly
+curl -H "Authorization: Bearer <token>" http://localhost:3001/api/me/subscription
+```
+
+---
+
+## 🧑‍💻 Tech Stack
 
 - **TypeScript 5.3** - Full type safety
 - **Prisma 6.17** - Modern ORM
