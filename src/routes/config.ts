@@ -48,8 +48,8 @@ const hardcodedFallbackConfig: RemoteVPNConfig = {
       assetKey: "ng",
       flagUrl: "https://flagcdn.com/w40/ng.png",
       coordinates: {
-        lat: 6.5244,
-        lng: 3.3792,
+        lat: 7.5000,
+        lng: 3.3500,
       },
       isDefault: false,
       sortOrder: 20,
