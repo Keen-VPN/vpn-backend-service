@@ -6,10 +6,9 @@ import {
   getClientIP,
   getUserAgent,
 } from "../utils/validation.js";
-import {
-  sendSalesTeamNotification,
-  sendCustomerConfirmation,
-} from "../utils/email.js";
+// import {
+//   sendSalesContactEmails,
+// } from "../utils/email.js";
 import type {
   SalesContactRequest,
   SalesContactResponse,
@@ -106,48 +105,16 @@ router.post("/submit", async (req: Request, res: Response): Promise<void> => {
     );
 
     // 6. Send notifications (don't block response on email failures)
-    // Send both emails in parallel, but don't wait for them to complete
-    const emailPromises = async (): Promise<void> => {
-      try {
-        // Send to sales team
-        const salesNotificationSuccess = await sendSalesTeamNotification(
-          createData,
-          salesContact.referenceId
-        );
-        if (salesNotificationSuccess) {
-          await salesContactModel.markSalesTeamNotified(salesContact.id);
-        } else {
-          console.error(
-            "❌ Failed to send sales team notification for:",
-            salesContact.referenceId
-          );
-        }
-      } catch (error) {
-        console.error("❌ Error in sales team notification:", error);
-      }
-
-      try {
-        // Send to customer
-        const customerConfirmationSuccess = await sendCustomerConfirmation(
-          createData,
-          salesContact.referenceId
-        );
-        if (customerConfirmationSuccess) {
-          await salesContactModel.markCustomerConfirmationSent(salesContact.id);
-        } else {
-          console.error(
-            "❌ Failed to send customer confirmation for:",
-            salesContact.referenceId
-          );
-        }
-      } catch (error) {
-        console.error("❌ Error in customer confirmation:", error);
-      }
-    };
-
-    // TODO: UNCOMMENT WHEN RESEND EMAILING SEVICE IS SETUP
+    // TODO: UNCOMMENT WHEN RESEND EMAILING SERVICE IS SETUP
     // Execute email notifications without blocking the response
-    // emailPromises().catch((error) => {
+    //
+    // import { sendSalesContactEmails } from "../utils/email.js";
+    // sendSalesContactEmails(
+    //   createData,
+    //   salesContact.id,
+    //   salesContact.referenceId,
+    //   salesContactModel
+    // ).catch((error) => {
     //   console.error("❌ Email notification errors:", error);
     // });
 

@@ -155,31 +155,6 @@ function validateTeamSize(teamSize: number | string): ValidationError | null {
 }
 
 /**
- * Validate country/region
- */
-function validateCountryRegion(countryRegion: string): ValidationError | null {
-  if (!countryRegion || countryRegion.trim().length === 0) {
-    return { field: "countryRegion", message: "Country/region is required" };
-  }
-
-  if (countryRegion.trim().length < 2) {
-    return {
-      field: "countryRegion",
-      message: "Please enter a valid country or region",
-    };
-  }
-
-  if (countryRegion.trim().length > 100) {
-    return {
-      field: "countryRegion",
-      message: "Country/region must be less than 100 characters",
-    };
-  }
-
-  return null;
-}
-
-/**
  * Validate consent
  */
 function validateConsent(hasConsent: boolean): ValidationError | null {
