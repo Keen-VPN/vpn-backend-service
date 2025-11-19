@@ -308,7 +308,6 @@ export interface CreateSalesContactData {
   preferredContactMethod?: string;
   preferredContactTime?: string;
   message?: string;
-  ipAddress?: string;
   userAgent?: string;
 }
 

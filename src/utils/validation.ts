@@ -142,14 +142,8 @@ function validateTeamSize(teamSize: number | string): ValidationError | null {
     };
   }
 
-  // Warn for very small teams (but don't block)
-  if (size < 5) {
-    return {
-      field: "teamSize",
-      message:
-        "Note: Our enterprise plans are typically designed for teams of 5+ users. Consider our individual plans for smaller teams.",
-    };
-  }
+  // Small teams are allowed - enterprise plans can accommodate any team size
+  // (Original validation was too restrictive - removed blocking for small teams)
 
   return null;
 }
@@ -339,24 +333,6 @@ export function sanitizeSalesContactRequest(
     preferredContactTime: data.preferredContactTime?.trim() || undefined,
     message: data.message?.trim() || undefined,
   };
-}
-
-/**
- * Get IP address from request (considering proxies)
- */
-export function getClientIP(req: any): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (forwarded) {
-    return forwarded.split(",")[0].trim();
-  }
-
-  return (
-    req.connection?.remoteAddress ||
-    req.socket?.remoteAddress ||
-    req.headers["x-real-ip"] ||
-    req.ip ||
-    undefined
-  );
 }
 
 /**

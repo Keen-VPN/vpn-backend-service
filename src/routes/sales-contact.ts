@@ -3,7 +3,6 @@ import SalesContact from "../models/SalesContact.js";
 import {
   validateSalesContactRequest,
   sanitizeSalesContactRequest,
-  getClientIP,
   getUserAgent,
 } from "../utils/validation.js";
 // import {
@@ -29,7 +28,7 @@ router.post("/submit", async (req: Request, res: Response): Promise<void> => {
   try {
     const requestData = req.body as SalesContactRequest;
 
-    console.log("💳 Sales contact submission received from:", getClientIP(req));
+    console.log("💳 Sales contact submission received");
     console.log("💳 Company:", requestData.companyName);
     console.log("💳 Email:", requestData.workEmail);
     console.log("💳 Team size:", requestData.teamSize);
@@ -51,26 +50,19 @@ router.post("/submit", async (req: Request, res: Response): Promise<void> => {
 
     // 3. Check for recent duplicates (spam protection)
     const salesContactModel = new SalesContact();
-    const clientIP = getClientIP(req);
     const duplicates = await salesContactModel.checkForDuplicates(
       sanitizedData.workEmail,
-      clientIP,
       15 // 15 minutes window
     );
 
     if (duplicates.length > 0) {
       console.log("🚨 Duplicate submission detected:", {
         email: sanitizedData.workEmail,
-        ip: clientIP,
         duplicateCount: duplicates.length,
       });
 
-      // Allow 1 duplicate per IP per day (legitimate retries)
-      // But block if more than 2 duplicates in 15 minutes
-      const recentFromSameIP = duplicates.filter(
-        (d) => d.ipAddress === clientIP
-      );
-      if (recentFromSameIP.length >= 2) {
+      // Block if more than 1 duplicate in 15 minutes (basic spam protection)
+      if (duplicates.length >= 2) {
         res.status(429).json({
           success: false,
           error:
@@ -79,19 +71,15 @@ router.post("/submit", async (req: Request, res: Response): Promise<void> => {
         return;
       }
 
-      // If duplicate from same email but different IP, just log and continue
-      // (User might be submitting from different devices/networks)
-      if (duplicates.length > 0 && recentFromSameIP.length === 0) {
-        console.log(
-          "⚠️ Duplicate email from different IP - allowing submission"
-        );
-      }
+      // Allow first retry but log it
+      console.log(
+        "⚠️ Allowing retry - first duplicate submission within time window"
+      );
     }
 
     // 4. Prepare data for database storage
     const createData: CreateSalesContactData = {
       ...sanitizedData,
-      ipAddress: clientIP,
       userAgent: getUserAgent(req),
     };
 
@@ -105,10 +93,9 @@ router.post("/submit", async (req: Request, res: Response): Promise<void> => {
     );
 
     // 6. Send notifications (don't block response on email failures)
-    // TODO: UNCOMMENT WHEN RESEND EMAILING SERVICE IS SETUP
+    // TODO: UNCOMMENT WHEN SMTP EMAILING SERVICE IS SETUP
     // Execute email notifications without blocking the response
-    //
-    // import { sendSalesContactEmails } from "../utils/email.js";
+
     // sendSalesContactEmails(
     //   createData,
     //   salesContact.id,
@@ -117,6 +104,8 @@ router.post("/submit", async (req: Request, res: Response): Promise<void> => {
     // ).catch((error) => {
     //   console.error("❌ Email notification errors:", error);
     // });
+
+    // console.log("🔔 Email notifications sent successfully");
 
     // 7. Return success response immediately
     console.log("✅ Sales contact submission completed successfully");

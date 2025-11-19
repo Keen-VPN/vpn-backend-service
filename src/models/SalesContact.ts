@@ -73,7 +73,6 @@ class SalesContact {
           preferredContactTime:
             salesContactData.preferredContactTime?.trim() || null,
           message: salesContactData.message?.trim() || null,
-          ipAddress: salesContactData.ipAddress || null,
           userAgent: salesContactData.userAgent || null,
           status: "pending",
           salesTeamNotified: false,
@@ -147,12 +146,11 @@ class SalesContact {
   }
 
   /**
-   * Check for recent duplicate requests from same email or IP
-   * Used for spam protection
+   * Check for recent duplicate requests from same email
+   * Used for basic spam protection
    */
   async checkForDuplicates(
     email: string,
-    ipAddress?: string,
     timeWindowMinutes: number = 15
   ): Promise<PrismaSalesContactNonNull[]> {
     try {
@@ -160,7 +158,6 @@ class SalesContact {
 
       console.log("🔍 Checking for duplicate sales contacts:", {
         email,
-        ipAddress,
         since: cutoffTime.toISOString(),
       });
 
@@ -169,10 +166,7 @@ class SalesContact {
           createdAt: {
             gte: cutoffTime,
           },
-          OR: [
-            { workEmail: email.trim().toLowerCase() },
-            ...(ipAddress ? [{ ipAddress }] : []),
-          ],
+          workEmail: email.trim().toLowerCase(),
         },
         orderBy: {
           createdAt: "desc",
