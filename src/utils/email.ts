@@ -4,16 +4,12 @@ import {
   loadEmailTemplate,
   prepareTemplateData,
 } from "../templates/email/utils/template-engine.js";
-
-/**
- * Email utility for sales contact notifications
- * In production, this should be replaced with a proper email service like SendGrid, AWS SES, etc.
- */
+import resend from "../config/resend.js";
 
 // Default email configuration
 const DEFAULT_CONFIG: EmailConfig = {
-  salesTeamEmail: process.env.SALES_TEAM_EMAIL || "sales@keenvpn.com",
-  fromEmail: process.env.FROM_EMAIL || "noreply@keenvpn.com",
+  salesTeamEmail: process.env.SALES_TEAM_EMAIL || "sales@vpnkeen.com",
+  fromEmail: process.env.FROM_EMAIL || "noreply@vpnkeen.com",
   fromName: process.env.FROM_NAME || "KeenVPN Sales Contact System",
 };
 
@@ -62,8 +58,7 @@ export function generateCustomerConfirmationEmail(
 }
 
 /**
- * Send email using console logging (for development)
- * In production, replace this with actual email service integration
+ * Send email using Resend API
  */
 export async function sendEmail(
   to: string,
@@ -78,24 +73,28 @@ export async function sendEmail(
     console.log("📧 From:", `${config.fromName} <${config.fromEmail}>`);
     console.log("📧 Subject:", subject);
 
-    // In development, just log the email content
+    // In development, log the email content but still send via Resend
     if (process.env.NODE_ENV !== "production") {
       console.log("📧 [DEV MODE] Email content:");
       console.log("📧 HTML length:", html.length, "characters");
-      console.log("📧 Text content:", text);
-      console.log("✅ Email logged successfully (development mode)");
-      return true;
+      console.log("📧 Text preview:", text.substring(0, 200) + "...");
     }
 
-    // TODO: In production, integrate with actual email service
-    // Examples:
-    // - SendGrid: await sgMail.send({ to, from: config.fromEmail, subject, html, text })
-    // - AWS SES: await ses.sendEmail({ ... })
-    // - Nodemailer: await transporter.sendMail({ ... })
+    // Send email via Resend
+    const { data, error } = await resend.emails.send({
+      from: `${config.fromName} <${config.fromEmail}>`,
+      to: [to],
+      subject,
+      html,
+      text,
+    });
 
-    console.log("⚠️ Email sending not configured for production yet");
-    console.log("📧 Email details logged for manual processing");
+    if (error) {
+      console.error("❌ Resend API error:", error);
+      return false;
+    }
 
+    console.log("✅ Email sent successfully via Resend, ID:", data?.id);
     return true;
   } catch (error) {
     console.error("❌ Failed to send email:", error);
