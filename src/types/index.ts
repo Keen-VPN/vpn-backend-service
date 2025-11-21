@@ -296,6 +296,65 @@ export interface StripeWebhookEvent {
   };
 }
 
+// Sales Contact types
+export interface CreateSalesContactData {
+  companyName: string;
+  workEmail: string;
+  teamSize: number;
+  countryRegion?: string;
+  hasConsent: boolean;
+  phone?: string;
+  useCase?: string;
+  preferredContactMethod?: string;
+  preferredContactTime?: string;
+  message?: string;
+  userAgent?: string;
+}
+
+export interface SalesContactRequest {
+  companyName: string;
+  workEmail: string;
+  teamSize: number;
+  countryRegion?: string;
+  hasConsent: boolean;
+  phone?: string;
+  useCase?: string;
+  preferredContactMethod?: string;
+  preferredContactTime?: string;
+  message?: string;
+}
+
+export interface SalesContactResponse {
+  success: boolean;
+  referenceId?: string;
+  message?: string;
+  error?: string;
+}
+
+export interface UpdateSalesContactData {
+  status?: "pending" | "contacted" | "converted" | "spam";
+  salesTeamNotified?: boolean;
+  customerConfirmationSent?: boolean;
+}
+
+// Email configuration types
+export interface EmailConfig {
+  salesTeamEmail: string;
+  fromEmail: string;
+  fromName: string;
+}
+
+// Validation helper types
+export interface ValidationError {
+  field: string;
+  message: string;
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  errors: ValidationError[];
+}
+
 // Remote VPN configuration types
 export interface RemoteVPNServerCoordinates {
   lat: number;

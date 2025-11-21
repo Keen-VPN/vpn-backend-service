@@ -8,27 +8,27 @@ datasource db {
 }
 
 model User {
-  id                 String              @id @default(uuid())
-  firebaseUid        String?             @unique @map("firebase_uid")
-  appleUserId        String?             @unique @map("apple_user_id")
-  googleUserId       String?             @unique @map("google_user_id")
-  email              String              @unique
-  displayName        String?             @map("display_name")
-  provider           String              @default("google")
-  emailVerified      Boolean             @default(false) @map("email_verified")
-  createdAt          DateTime            @default(now()) @map("created_at")
-  updatedAt          DateTime            @updatedAt @map("updated_at")
-  stripeCustomerId   String?             @unique @map("stripe_customer_id")
-  trialActive        Boolean             @default(false) @map("trial_active")
-  trialStartsAt      DateTime?           @map("trial_starts_at")
-  trialEndsAt        DateTime?           @map("trial_ends_at")
-  trialTier          String?             @map("trial_tier")
-  connectionSessions ConnectionSession[]
-  subscriptions      Subscription[]
-  appleIAPPurchases  AppleIAPPurchase[]
-  trialGrant         TrialGrant?
+  id                      String                   @id @default(uuid())
+  firebaseUid             String?                  @unique @map("firebase_uid")
+  appleUserId             String?                  @unique @map("apple_user_id")
+  googleUserId            String?                  @unique @map("google_user_id")
+  email                   String                   @unique
+  displayName             String?                  @map("display_name")
+  provider                String                   @default("google")
+  emailVerified           Boolean                  @default(false) @map("email_verified")
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  updatedAt               DateTime                 @updatedAt @map("updated_at")
+  stripeCustomerId        String?                  @unique @map("stripe_customer_id")
+  trialActive             Boolean                  @default(false) @map("trial_active")
+  trialStartsAt           DateTime?                @map("trial_starts_at")
+  trialEndsAt             DateTime?                @map("trial_ends_at")
+  trialTier               String?                  @map("trial_tier")
+  connectionSessions      ConnectionSession[]
+  subscriptions           Subscription[]
+  appleIAPPurchases       AppleIAPPurchase[]
+  trialGrant              TrialGrant?
   deviceTrialFingerprints DeviceTrialFingerprint[]
-  pushTokens         PushToken[]
+  pushTokens              PushToken[]
 
   @@map("users")
 }
@@ -69,44 +69,44 @@ model Subscription {
 }
 
 model AppleIAPPurchase {
-  id                     String    @id @default(uuid())
-  transactionId          String    @unique @map("transaction_id")
-  originalTransactionId  String    @unique @map("original_transaction_id")
-  productId              String    @map("product_id")
-  environment            String?   @map("environment")
-  purchaseDate           DateTime  @map("purchase_date")
-  expiresDate            DateTime? @map("expires_date")
-  receiptData            String?   @map("receipt_data")
-  linkedUserId           String?   @map("linked_user_id")
-  linkedEmail            String?   @map("linked_email")
-  linkedAt               DateTime? @map("linked_at")
-  createdAt              DateTime  @default(now()) @map("created_at")
-  updatedAt              DateTime  @updatedAt @map("updated_at")
-  linkedUser             User?     @relation(fields: [linkedUserId], references: [id], onDelete: SetNull)
+  id                    String    @id @default(uuid())
+  transactionId         String    @unique @map("transaction_id")
+  originalTransactionId String    @unique @map("original_transaction_id")
+  productId             String    @map("product_id")
+  environment           String?   @map("environment")
+  purchaseDate          DateTime  @map("purchase_date")
+  expiresDate           DateTime? @map("expires_date")
+  receiptData           String?   @map("receipt_data")
+  linkedUserId          String?   @map("linked_user_id")
+  linkedEmail           String?   @map("linked_email")
+  linkedAt              DateTime? @map("linked_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  linkedUser            User?     @relation(fields: [linkedUserId], references: [id], onDelete: SetNull)
 
   @@index([linkedUserId])
   @@map("apple_iap_purchases")
 }
 
 model ConnectionSession {
-  id                String            @id @default(uuid())
-  userId            String            @map("user_id")
-  sessionStart      DateTime          @map("session_start")
-  sessionEnd        DateTime?         @map("session_end")
-  durationSeconds   Int               @default(0) @map("duration_seconds")
-  serverLocation    String?           @map("server_location")
-  serverAddress     String?           @map("server_address")
-  platform          String
-  appVersion        String?           @map("app_version")
-  bytesTransferred  BigInt            @default(0) @map("bytes_transferred")
-  isAnonymized      Boolean           @default(false) @map("is_anonymized")
-  subscriptionTier  String?           @map("subscription_tier")
-  terminationReason TerminationReason @default(USER_TERMINATION) @map("termination_reason")
-  eventType         EventType         @default(SESSION_START) @map("event_type")
-  heartbeatTimestamp DateTime?        @map("heartbeat_timestamp")
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt @map("updated_at")
-  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                 String            @id @default(uuid())
+  userId             String            @map("user_id")
+  sessionStart       DateTime          @map("session_start")
+  sessionEnd         DateTime?         @map("session_end")
+  durationSeconds    Int               @default(0) @map("duration_seconds")
+  serverLocation     String?           @map("server_location")
+  serverAddress      String?           @map("server_address")
+  platform           String
+  appVersion         String?           @map("app_version")
+  bytesTransferred   BigInt            @default(0) @map("bytes_transferred")
+  isAnonymized       Boolean           @default(false) @map("is_anonymized")
+  subscriptionTier   String?           @map("subscription_tier")
+  terminationReason  TerminationReason @default(USER_TERMINATION) @map("termination_reason")
+  eventType          EventType         @default(SESSION_START) @map("event_type")
+  heartbeatTimestamp DateTime?         @map("heartbeat_timestamp")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([sessionStart])
@@ -144,6 +144,33 @@ model SessionAggregate {
   @@index([serverLocation])
   @@index([subscriptionTier])
   @@map("session_aggregates")
+}
+
+model SalesContact {
+  id                       String   @id @default(uuid())
+  referenceId              String   @unique @map("reference_id") // Human-readable reference for customer
+  companyName              String   @map("company_name")
+  workEmail                String   @map("work_email")
+  teamSize                 Int      @map("team_size")
+  countryRegion            String?  @map("country_region")
+  hasConsent               Boolean  @map("has_consent")
+  phone                    String?  @map("phone")
+  useCase                  String?  @map("use_case")
+  preferredContactMethod   String?  @map("preferred_contact_method")
+  preferredContactTime     String?  @map("preferred_contact_time")
+  message                  String?  @map("message")
+  userAgent                String?  @map("user_agent") // For basic request tracking
+  status                   String   @default("pending") @map("status") // pending, contacted, converted, spam
+  salesTeamNotified        Boolean  @default(false) @map("sales_team_notified")
+  customerConfirmationSent Boolean  @default(false) @map("customer_confirmation_sent")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  @@index([workEmail])
+  @@index([referenceId])
+  @@index([createdAt])
+  @@index([status])
+  @@map("sales_contacts")
 }
 
 model ProcessedSession {
@@ -191,8 +218,8 @@ model TrialGrant {
   metadata   Json?    @db.JsonB
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("trial_grants")
   @@index([deviceHash], map: "trial_grants_device_hash")
+  @@map("trial_grants")
 }
 
 model DeviceTrialFingerprint {
@@ -204,8 +231,8 @@ model DeviceTrialFingerprint {
   lastSeen  DateTime @default(now()) @map("last_seen")
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("trial_device_fingerprints")
   @@index([userId], map: "trial_device_fingerprints_user_id")
+  @@map("trial_device_fingerprints")
 }
 
 model PushToken {
@@ -219,8 +246,8 @@ model PushToken {
   updatedAt   DateTime @updatedAt @map("updated_at")
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("push_tokens")
   @@index([userId], map: "push_tokens_user_id")
+  @@map("push_tokens")
 }
 
 enum TerminationReason {
