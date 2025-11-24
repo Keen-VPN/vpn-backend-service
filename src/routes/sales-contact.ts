@@ -5,9 +5,7 @@ import {
   sanitizeSalesContactRequest,
   getUserAgent,
 } from "../utils/validation.js";
-// import {
-//   sendSalesContactEmails,
-// } from "../utils/email.js";
+import { sendSalesContactEmails } from "../utils/email.js";
 import type {
   SalesContactRequest,
   SalesContactResponse,
@@ -93,19 +91,17 @@ router.post("/submit", async (req: Request, res: Response): Promise<void> => {
     );
 
     // 6. Send notifications (don't block response on email failures)
-    // TODO: UNCOMMENT WHEN SMTP EMAILING SERVICE IS SETUP
     // Execute email notifications without blocking the response
+    sendSalesContactEmails(
+      createData,
+      salesContact.id,
+      salesContact.referenceId,
+      salesContactModel
+    ).catch((error) => {
+      console.error("❌ Email notification errors:", error);
+    });
 
-    // sendSalesContactEmails(
-    //   createData,
-    //   salesContact.id,
-    //   salesContact.referenceId,
-    //   salesContactModel
-    // ).catch((error) => {
-    //   console.error("❌ Email notification errors:", error);
-    // });
-
-    // console.log("🔔 Email notifications sent successfully");
+    console.log("🔔 Email notifications sent successfully");
 
     // 7. Return success response immediately
     console.log("✅ Sales contact submission completed successfully");
