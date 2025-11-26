@@ -341,3 +341,36 @@ export function sanitizeSalesContactRequest(
 export function getUserAgent(req: any): string | undefined {
   return req.headers["user-agent"] || undefined;
 }
+
+/**
+ * Validate country name format for server preferences
+ * Basic validation for country names - allows letters, spaces, hyphens, apostrophes
+ */
+export function isValidCountryName(country: string): boolean {
+  if (!country || country.trim().length === 0) {
+    return false;
+  }
+
+  const trimmedCountry = country.trim();
+
+  // Allow letters, spaces, hyphens, apostrophes, and periods (for abbreviations)
+  // Examples: "United States", "United Kingdom", "Côte d'Ivoire", "St. Lucia"
+  const countryRegex = /^[a-zA-Z\u00C0-\u017F\s\-'\.]{2,100}$/;
+
+  if (!countryRegex.test(trimmedCountry)) {
+    return false;
+  }
+
+  // Reject obvious test/spam entries
+  const spamPatterns = [
+    /^test$/i,
+    /^spam$/i,
+    /^fake$/i,
+    /^sample$/i,
+    /^\d+$/, // Only numbers
+    /^[a-z]{1,2}$/i, // Very short random letters
+    /^(.)\1{3,}$/, // Repeated characters (aaaa, bbbb, etc.)
+  ];
+
+  return !spamPatterns.some((pattern) => pattern.test(trimmedCountry));
+}
