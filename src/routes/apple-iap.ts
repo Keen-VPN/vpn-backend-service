@@ -357,6 +357,13 @@ router.post(
               billingPeriod: 'year' as 'year',
               priceAmount: 130.99,
             };
+          case 'com.keenvpn.premium.monthly':
+          case 'com.keenvpnmobile.premium.monthly':
+            return {
+              planName: 'Premium VPN - Monthly',
+              billingPeriod: 'month' as 'month',
+              priceAmount: 12.99,
+            };
           default:
             return {
               planName: 'Premium VPN',
@@ -369,20 +376,55 @@ router.post(
       let responseSubscription: SubscriptionWithAppleIAP | null = null;
 
       if (targetSubscription) {
+        // Detect if this is a plan change (upgrade/downgrade)
+        const isPlanChange = targetSubscription.planId && targetSubscription.planId !== productId;
+        
         const existingStart = targetSubscription.currentPeriodStart
           ? new Date(targetSubscription.currentPeriodStart)
           : null;
-        const finalStart =
-          existingStart && existingStart <= purchaseDate
-            ? existingStart
-            : purchaseDate;
-
         const existingEnd = targetSubscription.currentPeriodEnd
           ? new Date(targetSubscription.currentPeriodEnd)
           : null;
-        let finalEnd = finalExpiresDate ?? existingEnd ?? null;
-        if (existingEnd && finalExpiresDate) {
-          finalEnd = finalExpiresDate > existingEnd ? finalExpiresDate : existingEnd;
+
+        let finalStart: Date;
+        let finalEnd: Date | null;
+
+        if (isPlanChange && existingEnd) {
+          // Plan change: new subscription starts at the end of current period
+          // This ensures the user gets the full value of their current subscription
+          finalStart = existingEnd;
+          
+          // Calculate new period end based on new billing period
+          if (planDetails.billingPeriod === 'year') {
+            // Yearly: add 1 year to the end of current period
+            finalEnd = new Date(existingEnd);
+            finalEnd.setFullYear(finalEnd.getFullYear() + 1);
+          } else if (planDetails.billingPeriod === 'month') {
+            // Monthly: add 1 month to the end of current period
+            finalEnd = new Date(existingEnd);
+            finalEnd.setMonth(finalEnd.getMonth() + 1);
+          } else {
+            // Fallback: use StoreKit's expiration date if available
+            finalEnd = finalExpiresDate ?? existingEnd;
+          }
+          
+          console.log(`🔄 Plan change detected: ${targetSubscription.planId} → ${productId}`);
+          console.log(`   Current period ends: ${existingEnd.toISOString()}`);
+          console.log(`   New period starts: ${finalStart.toISOString()}`);
+          console.log(`   New period ends: ${finalEnd?.toISOString()}`);
+        } else {
+          // Same plan (renewal) or new subscription: use standard logic
+          finalStart =
+            existingStart && existingStart <= purchaseDate
+              ? existingStart
+              : purchaseDate;
+
+          // Use StoreKit's expiration date if available, otherwise keep existing
+          finalEnd = finalExpiresDate ?? existingEnd ?? null;
+          if (existingEnd && finalExpiresDate) {
+            // For renewals, use the later date (new expiration)
+            finalEnd = finalExpiresDate > existingEnd ? finalExpiresDate : existingEnd;
+          }
         }
 
         const updatePayload: UpdateSubscriptionData = {
