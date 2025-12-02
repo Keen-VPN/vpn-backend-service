@@ -1,0 +1,21 @@
+Thank You for Your Interest in KeenVPN Enterprise!
+
+Hello from the KeenVPN team! We've successfully received your enterprise sales inquiry and are excited to learn more about {{contactData.companyName}}.
+
+Your Reference ID: {{referenceId}}
+(Save this reference ID for future correspondence)
+
+What happens next?
+• Our sales team will review your request within 24 hours
+• We'll reach out to schedule a consultation
+• We'll discuss your specific VPN needs for {{contactData.teamSize}} users
+• We'll provide a customized quote and implementation plan
+
+Your Submission Summary:
+- Company: {{contactData.companyName}}
+- Team Size: {{contactData.teamSize}} users
+
+
+Best regards,
+The KeenVPN Sales Team
+{{salesTeamEmail}}

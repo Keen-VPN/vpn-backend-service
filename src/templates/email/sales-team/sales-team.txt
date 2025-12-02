@@ -1,0 +1,24 @@
+NEW ENTERPRISE SALES CONTACT
+
+Reference ID: {{referenceId}}
+
+Company Information:
+- Company: {{contactData.companyName}}
+- Work Email: {{contactData.workEmail}}
+- Team Size: {{contactData.teamSize}} users{{#if contactData.countryRegion}}
+- Country/Region: {{contactData.countryRegion}}{{/if}}{{#if contactData.phone}}
+- Phone: {{contactData.phone}}{{/if}}{{#if contactData.preferredContactMethod}}
+- Preferred Contact: {{contactData.preferredContactMethod}}{{/if}}{{#if contactData.preferredContactTime}}
+- Preferred Time: {{contactData.preferredContactTime}}{{/if}}
+
+{{#if contactData.useCase}}Use Case:
+{{contactData.useCase}}
+
+{{/if}}{{#if contactData.message}}Additional Message:
+{{contactData.message}}
+
+{{/if}}
+
+⏱️ Follow-up Reminder: Please respond within 24 hours.
+
+Contact submitted: {{timestamp}}
