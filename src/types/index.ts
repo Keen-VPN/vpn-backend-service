@@ -435,3 +435,28 @@ export interface VPNConfigResponseBody {
   source: "database" | "fallback";
   updatedAt: string | null;
 }
+
+// User Server Preference types
+export interface CreateUserServerPreferenceData {
+  country: string;
+  reason: string;
+}
+
+export interface UserServerPreferenceRequest {
+  country: string;
+  reason: string;
+}
+
+export interface UserServerPreferenceResponse {
+  success: boolean;
+  data?: {
+    id: string;
+    userId: string;
+    country: string;
+    reason: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  message?: string;
+  error?: string;
+}

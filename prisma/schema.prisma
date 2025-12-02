@@ -29,6 +29,7 @@ model User {
   trialGrant              TrialGrant?
   deviceTrialFingerprints DeviceTrialFingerprint[]
   pushTokens              PushToken[]
+  serverPreferences       UserServerPreference[]
 
   @@map("users")
 }
@@ -248,6 +249,22 @@ model PushToken {
 
   @@index([userId], map: "push_tokens_user_id")
   @@map("push_tokens")
+}
+
+model UserServerPreference {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  country   String
+  reason    String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, country], map: "user_server_preferences_user_country_unique")
+  @@index([userId], map: "user_server_preferences_user_id")
+  @@index([country], map: "user_server_preferences_country")
+  @@index([createdAt], map: "user_server_preferences_created_at")
+  @@map("user_server_preferences")
 }
 
 enum TerminationReason {
