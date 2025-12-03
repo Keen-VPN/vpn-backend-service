@@ -1,0 +1,20 @@
+Thank You for Your Server Location Request!
+
+Hello {{userDisplayName}}! We've successfully received your request for a VPN server location in {{country}}.
+
+Your Request Details:
+- Requested Country: {{country}}
+- Submitted: {{submittedAt}}
+
+What happens next?
+• Our team will review your request and consider it for future server deployments
+• We prioritize locations based on user demand and technical feasibility
+• You'll be notified when servers become available in your requested location
+• We appreciate your feedback and input on improving our service
+
+Your Reason:
+{{reason}}
+
+Best regards,
+The KeenVPN Team
+{{supportEmail}}
