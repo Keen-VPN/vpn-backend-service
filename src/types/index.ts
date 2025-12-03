@@ -460,3 +460,57 @@ export interface UserServerPreferenceResponse {
   message?: string;
   error?: string;
 }
+
+// Subscription History types
+export interface HistoryEvent {
+  id: string;
+  eventDate: string; // ISO timestamp in UTC
+  eventType:
+    | "purchase"
+    | "renewal"
+    | "cancellation"
+    | "plan_change"
+    | "trial_start"
+    | "trial_end";
+  provider: "stripe" | "apple_iap";
+  planName: string;
+  amount?: number;
+  currency: string;
+  status: "active" | "cancelled" | "expired" | "trialing";
+  periodStart?: string;
+  periodEnd?: string;
+  description: string; // Human readable description
+}
+
+export interface HistoryOptions {
+  page?: number;
+  limit?: number;
+  provider?: "stripe" | "apple_iap";
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export interface HistoryPagination {
+  page: number;
+  limit: number;
+  total: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+export interface HistoryResponse {
+  events: HistoryEvent[];
+  pagination: HistoryPagination;
+}
+
+export interface EventDetails {
+  event: HistoryEvent;
+  providerActions: ProviderActions;
+  additionalDetails?: Record<string, any>;
+}
+
+export interface ProviderActions {
+  manageSubscription?: string; // Stripe Customer Portal URL
+  downloadInvoice?: string; // Stripe invoice URL
+  appStoreManage?: boolean; // Show "Manage in App Store" for Apple
+}
