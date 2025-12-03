@@ -24,7 +24,7 @@ const hardcodedFallbackConfig: RemoteVPNConfig = {
       name: "United States",
       country: "United States",
       city: "Virginia",
-      serverAddress: "3.225.112.116",
+      serverAddress: "3.235.244.144",
       remoteIdentifier: null,
       credentialId: "client",
       assetKey: "us",
@@ -35,7 +35,11 @@ const hardcodedFallbackConfig: RemoteVPNConfig = {
       },
       isDefault: true,
       sortOrder: 10,
-      metadata: null,
+      metadata: {
+        wireguardPublicKey: "L0pab0tSSFF2cXlEQ2hHcHVOSGJMbVhLU25MMGRJMFFKMmVLL2NyYmdXMD0=",
+        wireguardPort: "51820",
+        wireguardAllowedIPs: "0.0.0.0/0",
+      },
     },
     {
       id: "ng-lagos",
@@ -151,6 +155,56 @@ function validateConfigPayload(config: RemoteVPNConfig): string[] {
   return errors;
 }
 
+function normalizeWireGuardKeys(config: RemoteVPNConfig): RemoteVPNConfig {
+  if (!config?.servers) {
+    return config;
+  }
+
+  // Normalize WireGuard public keys: trim whitespace and ensure they decode to 32 bytes
+  const normalizedServers = config.servers.map((server) => {
+    if (!server.metadata?.wireguardPublicKey) {
+      return server;
+    }
+
+    let key = server.metadata.wireguardPublicKey.trim();
+    
+    // Try to decode and validate
+    try {
+      const decoded = Buffer.from(key, "base64");
+      
+      // If key decodes to more than 32 bytes, extract first 32 bytes
+      if (decoded.length > 32) {
+        const first32 = decoded.slice(0, 32);
+        key = first32.toString("base64");
+        console.log(
+          `⚠️ Normalized WireGuard key for server ${server.id}: extracted first 32 bytes from ${decoded.length} bytes`
+        );
+      } else if (decoded.length < 32) {
+        console.warn(
+          `⚠️ WireGuard key for server ${server.id} is too short: ${decoded.length} bytes (expected 32)`
+        );
+      }
+    } catch (error) {
+      console.warn(
+        `⚠️ Failed to decode WireGuard key for server ${server.id}: ${error}`
+      );
+    }
+
+    return {
+      ...server,
+      metadata: {
+        ...server.metadata,
+        wireguardPublicKey: key,
+      },
+    };
+  });
+
+  return {
+    ...config,
+    servers: normalizedServers,
+  };
+}
+
 function normalizeConfigDates(config: RemoteVPNConfig): RemoteVPNConfig {
   if (!config) {
     return config;
@@ -242,7 +296,7 @@ router.get("/vpn", async (req: Request, res: Response): Promise<void> => {
     }
 
     const payload = record?.payload ?? fallbackConfig;
-    const normalizedConfig = normalizeConfigDates(payload);
+    const normalizedConfig = normalizeWireGuardKeys(normalizeConfigDates(payload));
     const etag = record?.etag ?? fallbackEtag;
 
     if (req.headers["if-none-match"] === etag) {
@@ -343,17 +397,18 @@ router.post(
       }
 
       const payload = config as RemoteVPNConfig;
-      const computedEtag = etag ?? generateWeakEtag(payload);
+      const normalizedPayload = normalizeWireGuardKeys(normalizeConfigDates(payload));
+      const computedEtag = etag ?? generateWeakEtag(normalizedPayload);
 
       const record = await vpnConfigModel.save({
-        version: payload.version,
-        payload: normalizeConfigDates(payload),
+        version: normalizedPayload.version,
+        payload: normalizedPayload,
         etag: computedEtag,
         activate,
       });
 
       const response: VPNConfigResponseBody = {
-        config: normalizeConfigDates(record.payload),
+        config: normalizeWireGuardKeys(normalizeConfigDates(record.payload)),
         version: record.version,
         etag: record.etag,
         source: "database",
@@ -464,22 +519,22 @@ router.put(
           return;
         }
 
-        payload = configPayload;
+        payload = normalizeWireGuardKeys(normalizeConfigDates(configPayload));
         nextVersion = configPayload.version;
         if (!nextEtag || nextEtag.trim().length === 0) {
-          nextEtag = generateWeakEtag(configPayload);
+          nextEtag = generateWeakEtag(payload);
         }
       }
 
       const record = await vpnConfigModel.update(req.params.id, {
-        payload: payload ? normalizeConfigDates(payload) : undefined,
+        payload: payload ? payload : undefined,
         version: nextVersion,
         etag: nextEtag,
         activate,
       });
 
       const response: VPNConfigResponseBody = {
-        config: normalizeConfigDates(record.payload),
+        config: normalizeWireGuardKeys(normalizeConfigDates(record.payload)),
         version: record.version,
         etag: record.etag,
         source: "database",

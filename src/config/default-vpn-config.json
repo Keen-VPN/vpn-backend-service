@@ -7,7 +7,7 @@
       "name": "United States",
       "country": "United States",
       "city": "Virginia",
-      "serverAddress": "3.225.112.116",
+      "serverAddress": "3.235.244.144",
       "remoteIdentifier": null,
       "credentialId": "client",
       "assetKey": "us",
@@ -18,7 +18,11 @@
       },
       "isDefault": true,
       "sortOrder": 10,
-      "metadata": null
+      "metadata": {
+        "wireguardPublicKey": "yhc43MUyfndIZEQeorTksQNqUMmuM5QvxrgyWpsS6h8=",
+        "wireguardPort": "51820",
+        "wireguardAllowedIPs": "0.0.0.0/0"
+      }
     },
     {
       "id": "ng-lagos",
@@ -36,7 +40,11 @@
       },
       "isDefault": false,
       "sortOrder": 20,
-      "metadata": null
+      "metadata": {
+        "wireguardPublicKey": "4btUIS400y7DjXG5xLQQuDZbNBFpMXNqOEKRNbSSJ2s=",
+        "wireguardPort": "51820",
+        "wireguardAllowedIPs": "0.0.0.0/0"
+      }
     }
   ],
   "credentials": [
@@ -52,6 +60,9 @@
   ],
   "featureFlags": null,
   "rollout": null,
-  "metadata": null
+  "metadata": {
+    "wireguardClientPrivateKey": "oAwPH9c+XUG4iIePmmjNlxf1JuuzUPl5KIcW/SZdxkU=",
+    "wireguardClientPublicKey": "EY9aZx/obn9StGPqj5VPP9ONznjXOQ53pGDtFCjEVAc="
+  }
 }
 

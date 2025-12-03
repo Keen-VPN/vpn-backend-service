@@ -15,6 +15,7 @@ import appleIAPRoutes from "./routes/apple-iap.js";
 import notificationsRoutes from "./routes/notifications.js";
 import configRoutes from "./routes/config.js";
 import salesContactRoutes from "./routes/sales-contact.js";
+import wireguardRoutes from "./routes/wireguard.js";
 import stripe from "./config/stripe.js";
 import "./config/firebase.js"; // Initialize Firebase
 import User from "./models/User.js";
@@ -495,6 +496,7 @@ app.use("/api/desktop-auth", desktopAuthRoutes);
 app.use("/api/apple-iap", appleIAPRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/config", configRoutes);
+app.use("/api/wireguard", wireguardRoutes);
 
 app.get(
   "/api/me/subscription",
