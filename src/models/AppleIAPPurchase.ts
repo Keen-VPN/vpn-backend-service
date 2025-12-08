@@ -10,15 +10,16 @@ export interface CapturePurchaseInput
   expiresDate?: Date | null;
 }
 
-const ledgerEntryFromRecord = (
-  record: any
-): AppleIAPPurchaseLedgerEntry => ({
+const ledgerEntryFromRecord = (record: any): AppleIAPPurchaseLedgerEntry => ({
   transactionId: record.apple_transaction_id ?? record.transactionId,
   originalTransactionId:
     record.apple_original_transaction_id ?? record.originalTransactionId,
   productId: record.apple_product_id ?? record.productId,
-  environment: (record.apple_environment ??
-    record.environment) as "Sandbox" | "Production" | null | undefined,
+  environment: (record.apple_environment ?? record.environment) as
+    | "Sandbox"
+    | "Production"
+    | null
+    | undefined,
   purchaseDate: (record.purchase_date ?? record.purchaseDate).toISOString(),
   expiresDate: record.expires_date
     ? new Date(record.expires_date).toISOString()
@@ -57,8 +58,7 @@ class AppleIAPPurchaseModel {
           ? existingByOriginal.purchaseDate
           : purchaseDate;
 
-      let resolvedExpiresDate =
-        expiresDate ?? existingByOriginal.expiresDate;
+      let resolvedExpiresDate = expiresDate ?? existingByOriginal.expiresDate;
       if (expiresDate && existingByOriginal.expiresDate) {
         resolvedExpiresDate =
           expiresDate > existingByOriginal.expiresDate
@@ -95,7 +95,8 @@ class AppleIAPPurchaseModel {
           ? existingByTransaction.purchaseDate
           : purchaseDate;
 
-      let resolvedExpiresDate = expiresDate ?? existingByTransaction.expiresDate;
+      let resolvedExpiresDate =
+        expiresDate ?? existingByTransaction.expiresDate;
       if (expiresDate && existingByTransaction.expiresDate) {
         resolvedExpiresDate =
           expiresDate > existingByTransaction.expiresDate
@@ -198,18 +199,25 @@ class AppleIAPPurchaseModel {
         linkedUserId: null,
         ...(onlyActive
           ? {
-              OR: [
-                { expiresDate: null },
-                { expiresDate: { gt: now } },
-              ],
+              OR: [{ expiresDate: null }, { expiresDate: { gt: now } }],
             }
           : {}),
       },
-      orderBy: { purchaseDate: 'desc' },
+      orderBy: { purchaseDate: "desc" },
+    });
+    return records.map(ledgerEntryFromRecord);
+  }
+
+  /**
+   * Find all Apple IAP purchases by user ID for history
+   */
+  async findByUserId(userId: string) {
+    const records = await prisma.appleIAPPurchase.findMany({
+      where: { linkedUserId: userId },
+      orderBy: { purchaseDate: "desc" },
     });
     return records.map(ledgerEntryFromRecord);
   }
 }
 
 export default AppleIAPPurchaseModel;
-
