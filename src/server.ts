@@ -54,6 +54,7 @@ app.use(
         ? [
             "https://vpnkeen.netlify.app",
             "https://vpnkeen.com",
+            "https://staging.vpnkeen.com",
             // Allow Electron app requests (file:// protocol)
             /^file:\/\//,
             // Allow localhost for Electron development
