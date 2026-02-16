@@ -15,10 +15,8 @@ export function getSubscriptionPlans(): SubscriptionPlan[] {
   }
 
   // Get plan configuration from environment variables
-  const annualPlanPrice = parseFloat(process.env.ANNUAL_PLAN_PRICE || "100.00");
-  const monthlyPlanPrice = parseFloat(
-    process.env.MONTHLY_PLAN_PRICE || "10.00"
-  );
+  const annualPlanPrice = parseFloat(process.env.ANNUAL_PLAN_PRICE || "40.00");
+  const monthlyPlanPrice = parseFloat(process.env.MONTHLY_PLAN_PRICE || "4.00");
   const annualPlanName = process.env.ANNUAL_PLAN_NAME || "Premium VPN - Annual";
   const monthlyPlanName =
     process.env.MONTHLY_PLAN_NAME || "Premium VPN - Monthly";
@@ -71,7 +69,7 @@ export function getPlanById(planId: string): SubscriptionPlan | null {
  * Get Stripe price ID for a given plan
  */
 export function getPriceIdForPlan(
-  planId: "premium_monthly" | "premium_yearly"
+  planId: "premium_monthly" | "premium_yearly",
 ): string {
   if (!ANNUAL_PRICE_ID || !MONTHLY_PRICE_ID) {
     throw new Error("Stripe price IDs are not configured");
@@ -84,7 +82,7 @@ export function getPriceIdForPlan(
  * Get plan name for a given plan ID
  */
 export function getPlanName(
-  planId: "premium_monthly" | "premium_yearly"
+  planId: "premium_monthly" | "premium_yearly",
 ): string {
   const plan = getPlanById(planId);
   return plan?.name || "Premium VPN";
@@ -94,7 +92,7 @@ export function getPlanName(
  * Get billing period for a given plan ID
  */
 export function getBillingPeriod(
-  planId: "premium_monthly" | "premium_yearly"
+  planId: "premium_monthly" | "premium_yearly",
 ): "month" | "year" {
   return planId === "premium_monthly" ? "month" : "year";
 }
