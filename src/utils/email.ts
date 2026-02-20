@@ -178,6 +178,67 @@ export async function sendCustomerConfirmation(
 }
 
 /**
+ * Generate server preference feedback email
+ */
+export function generateServerPreferenceEmail(
+  country: string,
+  reason: string,
+  userDisplayName: string | null,
+  submittedAt: string
+): { subject: string; html: string; text: string } {
+  const subject = `Thank you for your server location request - ${country}`;
+
+  const templateData = {
+    country,
+    reason,
+    userDisplayName: userDisplayName || "there",
+    submittedAt,
+    supportEmail: process.env.SUPPORT_EMAIL || DEFAULT_CONFIG.salesTeamEmail,
+  };
+
+  const { html, text } = loadEmailTemplate("server-preference", templateData);
+
+  return { subject, html, text };
+}
+
+/**
+ * Send server preference feedback email
+ * This function runs asynchronously without blocking the API response
+ */
+export async function sendServerPreferenceFeedback(
+  userEmail: string,
+  country: string,
+  reason: string,
+  userDisplayName: string | null,
+  config: EmailConfig = DEFAULT_CONFIG
+): Promise<void> {
+  try {
+    const submittedAt = new Date().toLocaleString("en-US", {
+      dateStyle: "long",
+      timeStyle: "short",
+    });
+
+    const { subject, html, text } = generateServerPreferenceEmail(
+      country,
+      reason,
+      userDisplayName,
+      submittedAt
+    );
+
+    console.log("📧 Sending server preference feedback email to:", userEmail);
+    const success = await sendEmail(userEmail, subject, html, text, config);
+
+    if (success) {
+      console.log("✅ Server preference feedback email sent successfully");
+    } else {
+      console.error("❌ Failed to send server preference feedback email");
+    }
+  } catch (error) {
+    console.error("❌ Error sending server preference feedback email:", error);
+  }
+}
+
+/**
  * Send both sales team notification and customer confirmation emails
  * This function runs asynchronously without blocking the API response
  */

@@ -1,12 +1,18 @@
-import prisma from '../config/prisma.js';
-import { Prisma, type Subscription as PrismaSubscription } from '@prisma/client';
-import type { CreateSubscriptionData, UpdateSubscriptionData } from '../types/index.js';
-import type { 
-  SubscriptionCreateData, 
-  SubscriptionWhereUnique, 
+import prisma from "../config/prisma.js";
+import {
+  Prisma,
+  type Subscription as PrismaSubscription,
+} from "@prisma/client";
+import type {
+  CreateSubscriptionData,
+  UpdateSubscriptionData,
+} from "../types/index.js";
+import type {
+  SubscriptionCreateData,
+  SubscriptionWhereUnique,
   SubscriptionWhere,
-  SubscriptionWithAppleIAP 
-} from '../types/subscription-types.js';
+  SubscriptionWithAppleIAP,
+} from "../types/subscription-types.js";
 
 /**
  * Subscription Model - Manages user subscriptions
@@ -16,48 +22,50 @@ class Subscription {
   /**
    * Create a new subscription
    */
-  async create(subscriptionData: CreateSubscriptionData): Promise<SubscriptionWithAppleIAP> {
+  async create(
+    subscriptionData: CreateSubscriptionData
+  ): Promise<SubscriptionWithAppleIAP> {
     try {
       const createData: SubscriptionCreateData = {
         userId: subscriptionData.userId,
-        subscriptionType: subscriptionData.subscriptionType || 'stripe',
+        subscriptionType: subscriptionData.subscriptionType || "stripe",
         stripeCustomerId: subscriptionData.stripeCustomerId,
         stripeSubscriptionId: subscriptionData.stripeSubscriptionId,
         appleTransactionId: subscriptionData.appleTransactionId,
         appleOriginalTransactionId: subscriptionData.appleOriginalTransactionId,
         appleProductId: subscriptionData.appleProductId,
         appleEnvironment: subscriptionData.appleEnvironment,
-        status: subscriptionData.status || 'active',
+        status: subscriptionData.status || "active",
         planId: subscriptionData.planId,
         planName: subscriptionData.planName,
         priceAmount: subscriptionData.priceAmount,
-        priceCurrency: subscriptionData.priceCurrency || 'USD',
+        priceCurrency: subscriptionData.priceCurrency || "USD",
         billingPeriod: subscriptionData.billingPeriod,
         currentPeriodStart: subscriptionData.currentPeriodStart,
         currentPeriodEnd: subscriptionData.currentPeriodEnd,
-        cancelAtPeriodEnd: subscriptionData.cancelAtPeriodEnd || false
+        cancelAtPeriodEnd: subscriptionData.cancelAtPeriodEnd || false,
       };
 
-      const subscription = await prisma.subscription.create({
+      const subscription = (await prisma.subscription.create({
         data: createData as any, // Type assertion needed due to Prisma type generation issue
         include: {
-          user: true
-        }
-      }) as unknown as SubscriptionWithAppleIAP;
+          user: true,
+        },
+      })) as unknown as SubscriptionWithAppleIAP;
 
-      console.log('✅ Subscription created successfully:', subscription.id);
+      console.log("✅ Subscription created successfully:", subscription.id);
       return subscription;
     } catch (error) {
       // Handle unique constraint on apple_transaction_id gracefully to make linking idempotent
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002' &&
+        error.code === "P2002" &&
         Array.isArray((error.meta as any)?.target) &&
-        (error.meta as any).target.includes('apple_transaction_id') &&
+        (error.meta as any).target.includes("apple_transaction_id") &&
         subscriptionData.appleTransactionId
       ) {
         console.warn(
-          '⚠️ Duplicate apple_transaction_id detected, returning existing subscription instead of failing'
+          "⚠️ Duplicate apple_transaction_id detected, returning existing subscription instead of failing"
         );
         const existing = await this.findByAppleTransactionId(
           subscriptionData.appleTransactionId
@@ -67,7 +75,7 @@ class Subscription {
         }
       }
 
-      console.error('❌ Failed to create subscription:', error);
+      console.error("❌ Failed to create subscription:", error);
       throw error;
     }
   }
@@ -78,10 +86,10 @@ class Subscription {
   async findById(subscriptionId: string): Promise<PrismaSubscription | null> {
     try {
       return await prisma.subscription.findUnique({
-        where: { id: subscriptionId }
+        where: { id: subscriptionId },
       });
     } catch (error) {
-      console.error('❌ Failed to find subscription by ID:', error);
+      console.error("❌ Failed to find subscription by ID:", error);
       throw error;
     }
   }
@@ -90,14 +98,16 @@ class Subscription {
    * Find subscription by Stripe subscription ID
    * Note: Since stripeSubscriptionId is no longer unique, this returns the first match
    */
-  async findByStripeSubscriptionId(stripeSubscriptionId: string): Promise<PrismaSubscription | null> {
+  async findByStripeSubscriptionId(
+    stripeSubscriptionId: string
+  ): Promise<PrismaSubscription | null> {
     try {
       return await prisma.subscription.findFirst({
         where: { stripeSubscriptionId },
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: "desc" },
       });
     } catch (error) {
-      console.error('❌ Failed to find subscription by Stripe ID:', error);
+      console.error("❌ Failed to find subscription by Stripe ID:", error);
       throw error;
     }
   }
@@ -105,14 +115,19 @@ class Subscription {
   /**
    * Find subscription by Apple transaction ID
    */
-  async findByAppleTransactionId(appleTransactionId: string): Promise<SubscriptionWithAppleIAP | null> {
+  async findByAppleTransactionId(
+    appleTransactionId: string
+  ): Promise<SubscriptionWithAppleIAP | null> {
     try {
       const whereCondition: SubscriptionWhereUnique = { appleTransactionId };
-      return await prisma.subscription.findUnique({
-        where: whereCondition as any // Type assertion needed due to Prisma type generation issue
-      }) as SubscriptionWithAppleIAP | null;
+      return (await prisma.subscription.findUnique({
+        where: whereCondition as any, // Type assertion needed due to Prisma type generation issue
+      })) as SubscriptionWithAppleIAP | null;
     } catch (error) {
-      console.error('❌ Failed to find subscription by Apple transaction ID:', error);
+      console.error(
+        "❌ Failed to find subscription by Apple transaction ID:",
+        error
+      );
       throw error;
     }
   }
@@ -120,14 +135,19 @@ class Subscription {
   /**
    * Find subscription by Apple original transaction ID
    */
-  async findByAppleOriginalTransactionId(appleOriginalTransactionId: string): Promise<SubscriptionWithAppleIAP | null> {
+  async findByAppleOriginalTransactionId(
+    appleOriginalTransactionId: string
+  ): Promise<SubscriptionWithAppleIAP | null> {
     try {
       const whereCondition: SubscriptionWhere = { appleOriginalTransactionId };
-      return await prisma.subscription.findFirst({
-        where: whereCondition as any // Type assertion needed due to Prisma type generation issue
-      }) as SubscriptionWithAppleIAP | null;
+      return (await prisma.subscription.findFirst({
+        where: whereCondition as any, // Type assertion needed due to Prisma type generation issue
+      })) as SubscriptionWithAppleIAP | null;
     } catch (error) {
-      console.error('❌ Failed to find subscription by Apple original transaction ID:', error);
+      console.error(
+        "❌ Failed to find subscription by Apple original transaction ID:",
+        error
+      );
       throw error;
     }
   }
@@ -143,16 +163,16 @@ class Subscription {
         where: {
           userId,
           status: {
-            in: ['active', 'trialing'] // Include both active and trialing subscriptions
+            in: ["active", "trialing"], // Include both active and trialing subscriptions
           },
           OR: [
             { currentPeriodEnd: null },
-            { currentPeriodEnd: { gte: new Date() } }
-          ]
+            { currentPeriodEnd: { gte: new Date() } },
+          ],
         },
         orderBy: {
-          createdAt: 'desc'
-        }
+          createdAt: "desc",
+        },
       });
 
       if (!subscription) {
@@ -163,7 +183,7 @@ class Subscription {
         const endDate = new Date(subscription.currentPeriodEnd);
         const now = new Date();
         if (endDate < now) {
-          console.log('⚠️ Subscription expired, returning null');
+          console.log("⚠️ Subscription expired, returning null");
           return null;
         }
       }
@@ -175,7 +195,7 @@ class Subscription {
 
       return subscription;
     } catch (error) {
-      console.error('❌ Failed to find active subscription:', error);
+      console.error("❌ Failed to find active subscription:", error);
       throw error;
     }
   }
@@ -188,11 +208,73 @@ class Subscription {
       return await prisma.subscription.findMany({
         where: { userId },
         orderBy: {
-          createdAt: 'desc'
-        }
+          createdAt: "desc",
+        },
       });
     } catch (error) {
-      console.error('❌ Failed to find subscriptions:', error);
+      console.error("❌ Failed to find subscriptions:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Find subscription history for a user with date filtering
+   */
+  async findHistoryByUserId(
+    userId: string,
+    dateFrom?: Date,
+    dateTo?: Date
+  ): Promise<PrismaSubscription[]> {
+    try {
+      const whereCondition: any = { userId };
+
+      if (dateFrom || dateTo) {
+        whereCondition.OR = [];
+
+        // Filter by creation date
+        if (dateFrom && dateTo) {
+          whereCondition.OR.push({
+            createdAt: {
+              gte: dateFrom,
+              lte: dateTo,
+            },
+          });
+        } else if (dateFrom) {
+          whereCondition.OR.push({
+            createdAt: { gte: dateFrom },
+          });
+        } else if (dateTo) {
+          whereCondition.OR.push({
+            createdAt: { lte: dateTo },
+          });
+        }
+
+        // Also filter by cancellation date if applicable
+        if (dateFrom && dateTo) {
+          whereCondition.OR.push({
+            cancelledAt: {
+              gte: dateFrom,
+              lte: dateTo,
+              not: null,
+            },
+          });
+        } else if (dateFrom) {
+          whereCondition.OR.push({
+            cancelledAt: { gte: dateFrom, not: null },
+          });
+        } else if (dateTo) {
+          whereCondition.OR.push({
+            cancelledAt: { lte: dateTo, not: null },
+          });
+        }
+      }
+
+      return await prisma.subscription.findMany({
+        where: whereCondition,
+        orderBy: { createdAt: "desc" },
+      });
+    } catch (error) {
+      console.error("❌ Failed to find subscription history:", error);
       throw error;
     }
   }
@@ -200,17 +282,20 @@ class Subscription {
   /**
    * Update subscription
    */
-  async update(subscriptionId: string, updateData: UpdateSubscriptionData): Promise<PrismaSubscription> {
+  async update(
+    subscriptionId: string,
+    updateData: UpdateSubscriptionData
+  ): Promise<PrismaSubscription> {
     try {
       const subscription = await prisma.subscription.update({
         where: { id: subscriptionId },
-        data: updateData
+        data: updateData,
       });
 
-      console.log('✅ Subscription updated successfully:', subscription.id);
+      console.log("✅ Subscription updated successfully:", subscription.id);
       return subscription;
     } catch (error) {
-      console.error('❌ Failed to update subscription:', error);
+      console.error("❌ Failed to update subscription:", error);
       throw error;
     }
   }
@@ -225,15 +310,19 @@ class Subscription {
   ): Promise<PrismaSubscription> {
     try {
       // First find the subscription
-      const subscription = await this.findByStripeSubscriptionId(stripeSubscriptionId);
+      const subscription = await this.findByStripeSubscriptionId(
+        stripeSubscriptionId
+      );
       if (!subscription) {
-        throw new Error(`Subscription not found for Stripe ID: ${stripeSubscriptionId}`);
+        throw new Error(
+          `Subscription not found for Stripe ID: ${stripeSubscriptionId}`
+        );
       }
 
       // Update by ID
       return await this.update(subscription.id, updateData);
     } catch (error) {
-      console.error('❌ Failed to update subscription by Stripe ID:', error);
+      console.error("❌ Failed to update subscription by Stripe ID:", error);
       throw error;
     }
   }
@@ -247,15 +336,18 @@ class Subscription {
         where: { id: subscriptionId },
         data: {
           cancelAtPeriodEnd: true,
-          cancelledAt: new Date()
+          cancelledAt: new Date(),
           // Keep status as 'active' - subscription remains active until period end
-        }
+        },
       });
 
-      console.log('✅ Subscription marked for cancellation at period end:', subscription.id);
+      console.log(
+        "✅ Subscription marked for cancellation at period end:",
+        subscription.id
+      );
       return subscription;
     } catch (error) {
-      console.error('❌ Failed to cancel subscription:', error);
+      console.error("❌ Failed to cancel subscription:", error);
       throw error;
     }
   }
@@ -268,12 +360,12 @@ class Subscription {
       const activeSubscription = await this.findActiveByUserId(userId);
 
       if (!activeSubscription) {
-        throw new Error('No active subscription found');
+        throw new Error("No active subscription found");
       }
 
       return await this.cancel(activeSubscription.id);
     } catch (error) {
-      console.error('❌ Failed to cancel subscription by user ID:', error);
+      console.error("❌ Failed to cancel subscription by user ID:", error);
       throw error;
     }
   }
@@ -288,14 +380,14 @@ class Subscription {
         data: {
           cancelAtPeriodEnd: false,
           cancelledAt: null,
-          status: 'active'
-        }
+          status: "active",
+        },
       });
 
-      console.log('✅ Subscription reactivated successfully:', subscription.id);
+      console.log("✅ Subscription reactivated successfully:", subscription.id);
       return subscription;
     } catch (error) {
-      console.error('❌ Failed to reactivate subscription:', error);
+      console.error("❌ Failed to reactivate subscription:", error);
       throw error;
     }
   }
@@ -306,13 +398,13 @@ class Subscription {
   async delete(subscriptionId: string): Promise<boolean> {
     try {
       await prisma.subscription.delete({
-        where: { id: subscriptionId }
+        where: { id: subscriptionId },
       });
 
-      console.log('✅ Subscription deleted successfully:', subscriptionId);
+      console.log("✅ Subscription deleted successfully:", subscriptionId);
       return true;
     } catch (error) {
-      console.error('❌ Failed to delete subscription:', error);
+      console.error("❌ Failed to delete subscription:", error);
       throw error;
     }
   }
@@ -325,7 +417,7 @@ class Subscription {
       const activeSubscription = await this.findActiveByUserId(userId);
       return activeSubscription !== null;
     } catch (error) {
-      console.error('❌ Failed to check active subscription:', error);
+      console.error("❌ Failed to check active subscription:", error);
       return false;
     }
   }
@@ -342,17 +434,16 @@ class Subscription {
             select: {
               id: true,
               email: true,
-              displayName: true
-            }
-          }
-        }
+              displayName: true,
+            },
+          },
+        },
       });
     } catch (error) {
-      console.error('❌ Failed to get subscription with user info:', error);
+      console.error("❌ Failed to get subscription with user info:", error);
       throw error;
     }
   }
 }
 
 export default Subscription;
-

@@ -1,8 +1,10 @@
 import express, { Request, Response, Router } from "express";
 import { Prisma } from "@prisma/client";
 import UserServerPreference from "../models/UserServerPreference.js";
+import User from "../models/User.js";
 import { verifyPermanentSessionToken } from "../utils/auth.js";
 import { isValidCountryName } from "../utils/validation.js";
+import { sendServerPreferenceFeedback } from "../utils/email.js";
 import type {
   UserServerPreferenceRequest,
   UserServerPreferenceResponse,
@@ -132,6 +134,9 @@ router.post(
           trimmedCountry
         );
 
+      const userModel = new User();
+      const user = await userModel.findById(userId);
+
       if (existingPreference) {
         // Update existing preference with new reason
         console.log(
@@ -155,6 +160,18 @@ router.post(
           },
           message: "Server location preference updated successfully",
         } as UserServerPreferenceResponse);
+
+        // Send feedback email asynchronously (don't block response)
+        if (user?.email) {
+          sendServerPreferenceFeedback(
+            user.email,
+            trimmedCountry,
+            trimmedReason,
+            user.displayName
+          ).catch((error) => {
+            console.error("❌ Failed to send feedback email:", error);
+          });
+        }
       } else {
         // Create new preference
         console.log("📝 Creating new preference for country:", trimmedCountry);
@@ -175,6 +192,18 @@ router.post(
           },
           message: "Server location preference submitted successfully",
         } as UserServerPreferenceResponse);
+
+        // Send feedback email asynchronously (don't block response)
+        if (user?.email) {
+          sendServerPreferenceFeedback(
+            user.email,
+            trimmedCountry,
+            trimmedReason,
+            user.displayName
+          ).catch((error) => {
+            console.error("❌ Failed to send feedback email:", error);
+          });
+        }
       }
 
       console.log("✅ User server preference processed successfully");

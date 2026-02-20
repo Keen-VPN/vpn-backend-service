@@ -9,6 +9,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import authRoutes from "./routes/auth.js";
 import subscriptionRoutes from "./routes/subscription.js";
+import subscriptionHistoryRoutes from "./routes/subscription-history.js";
 import connectionRoutes from "./routes/connection.js";
 import desktopAuthRoutes from "./routes/desktop-auth.js";
 import appleIAPRoutes from "./routes/apple-iap.js";
@@ -53,6 +54,7 @@ app.use(
         ? [
             "https://vpnkeen.netlify.app",
             "https://vpnkeen.com",
+            "https://staging.vpnkeen.com",
             // Allow Electron app requests (file:// protocol)
             /^file:\/\//,
             // Allow localhost for Electron development
@@ -491,6 +493,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // API routes
 app.use("/api/auth", authRoutes);
 app.use("/api/subscription", subscriptionRoutes);
+app.use("/api/subscription", subscriptionHistoryRoutes);
 app.use("/api/connection", connectionRoutes);
 app.use("/api/desktop-auth", desktopAuthRoutes);
 app.use("/api/apple-iap", appleIAPRoutes);
